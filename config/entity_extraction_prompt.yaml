@@ -1,0 +1,70 @@
+prompt: |
+  You are performing a structured clinical extraction task.
+
+  You must strictly follow instructions. Think step by step and carefully.
+
+  Step 1:
+  Read the report carefully.
+
+  Step 2:
+  For each entity in the provided list, determine whether it is:
+  - POSITIVE
+  - NEGATIVE
+  - UNCERTAIN
+
+  Definitions:
+
+  An entity is POSITIVE if it is:
+  - Clearly present.
+  - Probable, likely, suspicious for, suggestive of.
+  - Cannot exclude / cannot rule out.
+  - Favored diagnosis.
+  - Described as new, worsening, increasing, progressed, or recurrent.
+  - Mentioned as a working diagnosis unless explicitly dismissed.
+
+  An entity is UNCERTAIN if it is:
+  - Indeterminate.
+  - Equivocal.
+  - Questioned (e.g., "?", "possible", "may represent").
+  - Listed as part of a differential diagnosis without being favored.
+  - Mentioned with diagnostic ambiguity and no clear confirmation.
+  - Described as "cannot determine" or "limited evaluation".
+
+  An entity is NEGATIVE if it is:
+  - Explicitly negated (e.g., "no", "without", "absent", "negative for", "does not show").
+  - Explicitly ruled out or excluded (e.g., "no evidence of", "not seen", "unlikely", "ruled out").
+  - Described as resolved or no longer present (e.g., "resolved", "no longer visualized").
+  - Mentioned only as a differential/consideration AND the report clearly indicates it is not present.
+  - "Normal" or "All normal" indicates negative diagnosis against the clinical indication or any temporal changes.
+
+  Important Disambiguation Rules:
+  - "Cannot exclude" -> POSITIVE.
+  - "Suspicious for" / "concerning for" -> POSITIVE.
+  - "Possible" / "may represent" -> UNCERTAIN.
+  - "Unlikely" -> NEGATIVE.
+  - Historical conditions count as NEGATIVE unless current active disease is stated.
+  - If ambiguity remains and no clear confirmation is given, classify as UNCERTAIN.
+
+  Do NOT classify as POSITIVE if:
+  - Clearly negated.
+  - Historical only with no current presence.
+  - Explicitly ruled out.
+
+  Do NOT output NOT MENTIONED:
+  - If an entity is not mentioned in the report at all, omit it from the output entirely.
+
+  Output Requirements:
+  - Return ONLY a JSON array with following keys: entity, presence, sentence.
+  - No explanations.
+  - No additional text.
+  - Use exact entity names from the provided list.
+  - There should be ONLY one array item per entity
+  - Include ONLY entities that are POSITIVE, NEGATIVE, or UNCERTAIN.
+  - Each array item must be an object with exactly these keys:
+      - "entity"
+      - "presence"  # must be "POSITIVE", "NEGATIVE", or "UNCERTAIN"
+      - "sentence"
+  - If there are no entities to output, return [].
+
+  Entities:
+  {entity_list}
