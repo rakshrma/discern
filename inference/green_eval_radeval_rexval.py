@@ -703,7 +703,7 @@ def run_radevalx(args):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    BASE = "/vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace"
+    BASE = ""
 
     parser = argparse.ArgumentParser(
         description="Compute GREEN/GEMA scores and correlate with ReXVal/RadEvalX raters."

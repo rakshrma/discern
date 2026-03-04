@@ -6,7 +6,7 @@ import os
 # ============================================================
 # -------------------- Global Configuration ------------------
 # ============================================================
-TOKEN_PATH            = "../.databricks.token"
+TOKEN_PATH            = "../config/.databricks.token"
 PROMPT_YAML_PATH      = "../config/entity_extraction_prompt.yaml"
 ENTITIES_YAML_PATH    = "../config/entities.yaml"
 ATTRIBUTE_PROMPT_PATH = "../config/attribute_extraction_prompt.yaml"

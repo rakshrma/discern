@@ -465,7 +465,7 @@ if __name__ == "__main__":
         description="Compute NLP metrics on report pairs and correlate with ReXVal raters."
     )
     parser.add_argument(
-        "--reports",.
+        "--reports",
         help="CSV with study_id, candidate_reporter, candidate_report, gt_report",
     )
     parser.add_argument(
