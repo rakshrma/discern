@@ -51,9 +51,9 @@ setup(
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Science/Research",
-        "Intended Audience :: Healthcare Industry",
+        "Intended Audience :: Academic and Industrial Radiology",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
-        "Topic :: Scientific/Engineering :: Medical Science Apps.",
+        "Topic :: Scientific/Engineering :: Medical Informatics",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
@@ -69,6 +69,5 @@ setup(
         "medical AI",
         "chest X-ray",
         "LLM evaluation",
-        "MICCAI",
     ],
 )
