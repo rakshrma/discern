@@ -304,10 +304,10 @@ print(sections.impression)
 
 DISCERN includes comprehensive comparison scripts for benchmarking against established radiology report evaluation methods:
 
-- **ReXVal** — Radiologist expert validation benchmark (`run_rexval_comparison.py`)
-- **RadEvalX** — Radiology evaluation benchmark (`run_radevalx_comparison.py`)
-- **GREEN** — Generative radiology report evaluation (`green_eval_radeval_rexval.py`)
-- **NLP Metrics** — BLEU, ROUGE, BERTScore, and other traditional metrics (`nlp_metrics_eval_*.py`)
+- **ReXVal** — Radiologist expert validation benchmark 
+- **RadEvalX** — Radiology evaluation benchmark 
+- **GREEN** — Generative radiology report evaluation
+- **NLP Metrics** — BLEU, ROUGE, BERTScore, and other traditional metrics
 
 These scripts compute correlation statistics (Kendall's tau, Spearman's rho) between DISCERN scores and expert radiologist annotations, demonstrating alignment with clinical judgment.
 
@@ -333,17 +333,9 @@ If you use DISCERN in your research, please cite:
 ```bibtex
 @article{sharma2025discern,
   title={DISCERN: A Clinical Impact-Aware Framework for Radiology Report Comparison},
-  author={Sharma, Rakesh},
-  journal={International Conference on Medical Image Computing and Computer-Assisted Intervention (MICCAI)},
-  year={2025}
+  author={Sharma, Rakesh and Beeche, Cameron and Dong, Jessie and Zhuang, Richard and Qu, Huaizhi and Zhang, Ruichen and Gangaram, Vineeth and Goswami, Pulak and Xin, Jiayi and Ballard, Jenna and Goldberg, Ari and Sagreiya, Hersh and Long, Qi and Chen, Tianlong and Witschey, Walter}
 }
 ```
-
----
-
-## License
-
-Please refer to the repository for license information.
 
 ---
 
