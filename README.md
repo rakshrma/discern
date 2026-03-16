@@ -1,8 +1,8 @@
 # DISCERN: Clinical Impact-Aware Framework for Radiology Report Comparison
-
 <p align="center">
-  <img src="data/discern_figure2.png" alt="DISCERN Framework Overview" width="800"/>
+  <img src="data/discern_figure1.png" alt="DISCERN Framework Overview" width="800"/>
 </p>
+
 
 **DISCERN** is an LLM-powered evaluation framework designed to assess the clinical accuracy of AI-generated radiology reports by comparing them against radiologist-authored ground truth reports. Unlike traditional NLP metrics (BLEU, ROUGE, BERTScore), DISCERN operates at the *clinical entity level*, capturing diagnostically meaningful discrepancies and weighting them by their clinical significance — providing evaluation scores that align with how radiologists actually judge report quality.
 
@@ -42,6 +42,10 @@ DISCERN addresses this gap by introducing an evaluation framework that:
 ---
 
 ## How DISCERN Works
+
+<p align="center">
+  <img src="data/discern_figure2.png" alt="DISCERN Framework Overview" width="800"/>
+</p>
 
 DISCERN evaluates a candidate radiology report against a ground truth report through a multi-stage pipeline, with each stage leveraging LLM-based structured extraction and validation:
 
