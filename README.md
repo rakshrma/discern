@@ -107,7 +107,7 @@ discern/
 
 ## Entity Taxonomy
 
-DISCERN uses a comprehensive, hierarchically organized taxonomy of **100+ chest X-ray entities** spanning 30 categories. The taxonomy is split into two levels:
+DISCERN uses a comprehensive, hierarchically organized taxonomy of **121 chest X-ray entities** spanning 30 categories. The taxonomy is split into two levels:
 
 ### Findings-Level Entities
 
