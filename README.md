@@ -335,9 +335,3 @@ If you use DISCERN in your research, please cite:
   author={Sharma, Rakesh and Beeche, Cameron and Dong, Jessie and Zhuang, Richard and Qu, Huaizhi and Zhang, Ruichen and Gangaram, Vineeth and Goswami, Pulak and Xin, Jiayi and Ballard, Jenna and Goldberg, Ari and Sagreiya, Hersh and Long, Qi and Chen, Tianlong and Witschey, Walter}
 }
 ```
-
----
-
-## Acknowledgments
-
-DISCERN was developed to bridge the gap between automated NLP evaluation and clinical utility assessment in radiology report generation. The entity taxonomy and clinical significance rubric were designed to reflect the priorities of practicing radiologists when assessing report quality.
