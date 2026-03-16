@@ -301,7 +301,7 @@ print(sections.impression)
 
 ## Evaluation and Benchmarking
 
-DISCERN includes comprehensive comparison scripts for benchmarking against established radiology report evaluation methods:
+DISCERN includes comprehensive comparison for benchmarking against established radiology report evaluation methods:
 
 - **ReXVal** — Radiologist expert validation benchmark 
 - **RadEvalX** — Radiology evaluation benchmark 
