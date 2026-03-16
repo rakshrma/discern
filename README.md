@@ -8,9 +8,7 @@
 
 ### Authors
 
-**Rakesh Sharma**<sup>1</sup>, **Cameron Beeche**<sup>1</sup>, **Jessie Dong**<sup>1</sup>, **Richard Zhuang**<sup>1</sup>, **Huaizhi Qu**<sup>2</sup>, **Ruichen Zhang**<sup>2</sup>, **Vineeth Gangaram**<sup>1</sup>, **Pulak Goswami**<sup>1</sup>, **Jiayi Xin**<sup>1</sup>, **Jenna Ballard**<sup>1</sup>, **Ari Goldberg**<sup>1</sup>, **Hersh Sagreiya**<sup>1</sup>, **Qi Long**<sup>1</sup>, **Tianlong Chen**<sup>2</sup>, **Walter Witschey**<sup>1</sup>
-
-<sup>1</sup> University of Pennsylvania &nbsp;|&nbsp; <sup>2</sup> University of North Carolina at Chapel Hill
+**Rakesh Sharma**, **Cameron Beeche**, **Jessie Dong**, **Richard Zhuang**, **Huaizhi Qu**, **Ruichen Zhang**, **Vineeth Gangaram**, **Pulak Goswami**, **Jiayi Xin**, **Jenna Ballard**, **Ari Goldberg**, **Hersh Sagreiya**, **Qi Long**, **Tianlong Chen**, **Walter Witschey**
 
 ---
 
