@@ -67,50 +67,6 @@ DISCERN evaluates a candidate radiology report against a ground truth report thr
 
 ---
 
-## Pipeline Architecture
-
-```
-┌─────────────────────┐     ┌─────────────────────┐
-│  Reference Report   │     │  Candidate Report    │
-└─────────┬───────────┘     └─────────┬───────────┘
-          │                           │
-          ▼                           ▼
-┌─────────────────────┐     ┌─────────────────────┐
-│  Section Parsing    │     │  Section Parsing    │
-│  (HF Local Model)   │     │  (HF Local Model)   │
-└─────────┬───────────┘     └─────────┬───────────┘
-          │                           │
-          ▼                           ▼
-┌─────────────────────┐     ┌─────────────────────┐
-│  Entity Extraction  │     │  Entity Extraction  │
-│  (LLM)              │     │  (LLM)              │
-└─────────┬───────────┘     └─────────┬───────────┘
-          │                           │
-          └─────────┬─────────────────┘
-                    ▼
-          ┌─────────────────────┐
-          │ Attribute Comparison│
-          │ (Diagnosis, Location│
-          │  Severity, Temporal)│
-          └─────────┬───────────┘
-                    ▼
-          ┌─────────────────────┐
-          │ Merge: Common +     │
-          │ Missing + Extra     │
-          └─────────┬───────────┘
-                    ▼
-          ┌─────────────────────┐
-          │ Clinical Significance│
-          │ Scoring (0–4)       │
-          └─────────┬───────────┘
-                    ▼
-          ┌─────────────────────┐
-          │  DISCERN Score      │
-          │  (Weighted Penalty) │
-          └─────────────────────┘
-```
-
----
 
 ## Repository Structure
 
