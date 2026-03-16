@@ -1,11 +1,16 @@
 # DISCERN: Clinical Impact-Aware Framework for Radiology Report Comparison
+
 <p align="center">
   <img src="data/discern_figure1.png" alt="DISCERN Framework Overview" width="800"/>
 </p>
 
-
 **DISCERN** is an LLM-powered evaluation framework designed to assess the clinical accuracy of AI-generated radiology reports by comparing them against radiologist-authored ground truth reports. Unlike traditional NLP metrics (BLEU, ROUGE, BERTScore), DISCERN operates at the *clinical entity level*, capturing diagnostically meaningful discrepancies and weighting them by their clinical significance — providing evaluation scores that align with how radiologists actually judge report quality.
 
+### Authors
+
+**Rakesh Sharma**<sup>1</sup>, **Cameron Beeche**<sup>1</sup>, **Jessie Dong**<sup>1</sup>, **Richard Zhuang**<sup>1</sup>, **Huaizhi Qu**<sup>2</sup>, **Ruichen Zhang**<sup>2</sup>, **Vineeth Gangaram**<sup>1</sup>, **Pulak Goswami**<sup>1</sup>, **Jiayi Xin**<sup>1</sup>, **Jenna Ballard**<sup>1</sup>, **Ari Goldberg**<sup>1</sup>, **Hersh Sagreiya**<sup>1</sup>, **Qi Long**<sup>1</sup>, **Tianlong Chen**<sup>2</sup>, **Walter Witschey**<sup>1</sup>
+
+<sup>1</sup> University of Pennsylvania &nbsp;|&nbsp; <sup>2</sup> University of North Carolina at Chapel Hill
 
 ---
 
@@ -13,7 +18,6 @@
 
 - [Motivation](#motivation)
 - [How DISCERN Works](#how-discern-works)
-- [Pipeline Architecture](#pipeline-architecture)
 - [Repository Structure](#repository-structure)
 - [Entity Taxonomy](#entity-taxonomy)
 - [Scoring System](#scoring-system)
@@ -43,7 +47,7 @@ DISCERN addresses this gap by introducing an evaluation framework that:
 ## How DISCERN Works
 
 <p align="center">
-  <img src="data/discern_figure2.png" alt="DISCERN Framework Overview" width="800"/>
+  <img src="data/discern_figure2.png" alt="DISCERN Pipeline" width="800"/>
 </p>
 
 DISCERN evaluates a candidate radiology report against a ground truth report through a multi-stage pipeline, with each stage leveraging LLM-based structured extraction and validation:
@@ -66,7 +70,6 @@ DISCERN evaluates a candidate radiology report against a ground truth report thr
 
 ---
 
-
 ## Repository Structure
 
 ```
@@ -81,17 +84,19 @@ discern/
 │   ├── section_parsing_prompt.yaml        # Prompt template for report section parsing
 │   └── significance_prompt.yaml           # Prompt template for clinical significance scoring
 ├── data/
-│   └── discern_plot.png                   # Framework overview figure
-└── src/
-    ├── __init_.py
-    ├── call_llm.py                        # LLM interface (Databricks + Hugging Face)
-    ├── evaluate_reports.py                # End-to-end evaluation orchestrator
-    ├── evaluate_significance.py           # Clinical significance scoring module
-    ├── extract_entities.py                # Entity extraction with structured validation
-    ├── generate_attributes.py             # Attribute concordance comparison module
-    ├── get_discern_score.py               # DISCERN score computation and aggregation
-    ├── section_parsing.py                 # Report section parsing (local HF models)
-    ├── utils.py                           # Entity merging and helper utilities
+│   ├── discern_figure1.png                # Framework overview figure
+│   └── discern_figure2.png                # Pipeline detail figure
+├── src/                                   # Core DISCERN pipeline modules
+│   ├── __init_.py
+│   ├── call_llm.py                        # LLM interface (Databricks + Hugging Face)
+│   ├── evaluate_reports.py                # End-to-end evaluation orchestrator
+│   ├── evaluate_significance.py           # Clinical significance scoring module
+│   ├── extract_entities.py                # Entity extraction with structured validation
+│   ├── generate_attributes.py             # Attribute concordance comparison module
+│   ├── get_discern_score.py               # DISCERN score computation and aggregation
+│   ├── section_parsing.py                 # Report section parsing (local HF models)
+│   └── utils.py                           # Entity merging and helper utilities
+└── inference/                             # Benchmarking and comparison scripts
     ├── green_eval_radeval_rexval.py        # GREEN metric evaluation comparison
     ├── inference_radeval.py               # RadEvalX inference runner
     ├── inference_rexval.py                # ReXVal inference runner
@@ -222,12 +227,12 @@ All prompts and entity definitions are stored as YAML files in the `config/` dir
 
 ### End-to-End Report Evaluation
 
-The primary entry point is `evaluate_reports.py`, which orchestrates the full pipeline:
+The primary entry point is `src/evaluate_reports.py`, which orchestrates the full pipeline and returns both the per-entity evaluation and the aggregate DISCERN score:
 
 ```python
 from src.evaluate_reports import run_evaluation
 
-results = run_evaluation(
+discern_evaluation, discern_score = run_evaluation(
     report_text="FINDINGS: The heart is normal in size...",          # Ground truth report
     candidate_text="FINDINGS: The heart appears enlarged...",        # AI-generated report
     model="databricks-claude-sonnet-4-5",                        # LLM model name
@@ -237,9 +242,11 @@ results = run_evaluation(
     attribute_prompt_path="config/attribute_extraction_prompt.yaml", # Attribute comparison prompt
     significance_yaml_path="config/significance_prompt.yaml",       # Significance scoring prompt
 )
+
+print(f"DISCERN Score: {discern_score}")
 ```
 
-The returned `results` is a list of dictionaries, one per entity, each containing:
+The `discern_evaluation` is a list of dictionaries, one per entity, each containing:
 
 ```python
 {
@@ -255,9 +262,9 @@ The returned `results` is a list of dictionaries, one per entity, each containin
 }
 ```
 
-### Computing the DISCERN Score
+### Computing the DISCERN Score from CSV
 
-Once you have evaluation results (e.g., saved as a CSV), compute the aggregate DISCERN score:
+If you have evaluation results saved as a CSV, compute the aggregate DISCERN score with:
 
 ```python
 from src.get_discern_score import process_csv
@@ -269,7 +276,7 @@ df = process_csv(
 print(df[["discern_score"]].describe())
 ```
 
-Or process an entire directory of evaluation files:
+Or process all CSV files in a directory:
 
 ```python
 from src.get_discern_score import process_directory
@@ -301,11 +308,11 @@ print(sections.impression)
 
 ## Evaluation and Benchmarking
 
-DISCERN includes comprehensive comparison for benchmarking against established radiology report evaluation methods:
+DISCERN includes comprehensive comparison scripts (in the `inference/` directory) for benchmarking against established radiology report evaluation methods:
 
 - **ReXVal** — Radiologist expert validation benchmark 
 - **RadEvalX** — Radiology evaluation benchmark 
-- **GREEN** — Generative radiology report evaluation
+- **GREEN** — Generative radiology report evaluation 
 - **NLP Metrics** — BLEU, ROUGE, BERTScore, and other traditional metrics
 
 These scripts compute correlation statistics (Kendall's tau, Spearman's rho) between DISCERN scores and expert radiologist annotations, demonstrating alignment with clinical judgment.
@@ -335,3 +342,14 @@ If you use DISCERN in your research, please cite:
   author={Sharma, Rakesh and Beeche, Cameron and Dong, Jessie and Zhuang, Richard and Qu, Huaizhi and Zhang, Ruichen and Gangaram, Vineeth and Goswami, Pulak and Xin, Jiayi and Ballard, Jenna and Goldberg, Ari and Sagreiya, Hersh and Long, Qi and Chen, Tianlong and Witschey, Walter}
 }
 ```
+
+---
+
+## License
+
+
+
+---
+
+## Acknowledgments
+
