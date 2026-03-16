@@ -73,6 +73,8 @@ DISCERN evaluates a candidate radiology report against a ground truth report thr
 ```
 discern/
 ├── README.md
+├── setup.py                               # Package installation configuration
+├── requirements.txt                       # Python dependencies
 ├── config/
 │   ├── attribute_extraction_prompt.yaml   # Prompt template for attribute comparison
 │   ├── diagnosis_only.yaml                # Diagnosis-level entity taxonomy
@@ -187,14 +189,28 @@ Where `raw_penalty` is the count of discordant dimensions (diagnosis, location, 
 ```bash
 git clone https://github.com/rakshrma/discern.git
 cd discern
-pip install pandas pydantic pyyaml openai
 ```
 
-For local Hugging Face model inference (section parsing), additionally install:
+**Option 1 — Install with pip (recommended):**
 
 ```bash
-pip install torch transformers
+# Core pipeline only
+pip install .
+
+# Core + benchmarking dependencies
+pip install ".[inference]"
+
+# Everything
+pip install ".[all]"
 ```
+
+**Option 2 — Install from requirements.txt:**
+
+```bash
+pip install -r requirements.txt
+```
+
+> **Note:** The [GREEN](https://github.com/Stanford-AIMI/GREEN) metric package is not available on PyPI. If you need GREEN evaluation, install it separately from the Stanford AIMI repository.
 
 ### Token Configuration
 
@@ -350,4 +366,3 @@ If you use DISCERN in your research, please cite:
 ---
 
 ## Acknowledgments
-
