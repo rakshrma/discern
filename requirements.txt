@@ -1,0 +1,32 @@
+# =============================================================================
+# DISCERN - Requirements
+# =============================================================================
+# Core dependencies (required for the DISCERN evaluation pipeline)
+# =============================================================================
+
+pandas>=1.5.0
+pydantic>=2.0.0
+PyYAML>=6.0
+openai>=1.0.0
+torch>=2.0.0
+transformers>=4.30.0
+
+# =============================================================================
+# Inference & Benchmarking dependencies (required for inference/ scripts)
+# =============================================================================
+
+numpy>=1.23.0
+scipy>=1.10.0
+matplotlib>=3.6.0
+tqdm>=4.60.0
+nltk>=3.8.0
+rouge>=1.0.0
+bert-score>=0.3.13
+
+# =============================================================================
+# Optional dependencies
+# =============================================================================
+# green_score — Required only for GREEN metric evaluation.
+#               Not available on PyPI; install from the GREEN repository:
+#               https://github.com/Stanford-AIMI/GREEN
+# green_score
