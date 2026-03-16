@@ -54,7 +54,7 @@ def evaluate_rexval(model: str, output_path: str):
 
         # Write row immediately to CSV
         original_row = rexval_report_pairs.loc[row.Index].to_dict()
-        original_row["reads_eval"] = result
+        original_row["discern_eval"] = result
         pd.DataFrame([original_row]).to_csv(
             output_path,
             mode="a",
@@ -76,7 +76,7 @@ if __name__ == "__main__":
     for model in model_list:
         output_path = os.path.join(
             OUTPUT_DIR,
-            f"rexval_reads_evaluation_{model.replace('-', '_').replace('/','_')}.csv"
+            f"rexval_discern_evaluation_{model.replace('-', '_').replace('/','_')}.csv"
         )
         print(f"\n{'='*50}\nRunning model: {model}\n{'='*50}")
         try:

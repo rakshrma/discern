@@ -40,7 +40,7 @@ OUR_COLUMNS = [
 SIGNIFICANT_COLUMNS   = [c for c in OUR_COLUMNS if c.endswith("_significant")]
 INSIGNIFICANT_COLUMNS = [c for c in OUR_COLUMNS if c.endswith("_insignificant")]
 RATER_SUMMARY_COLUMNS = ["total_errors", "total_significant", "total_insignificant"]
-SUMMARY_COLUMNS       = RATER_SUMMARY_COLUMNS + ["reads_score"]
+SUMMARY_COLUMNS       = RATER_SUMMARY_COLUMNS + ["discern_score"]
 ALL_COMPARE_COLUMNS   = OUR_COLUMNS + SUMMARY_COLUMNS
 RATER_COMPARE_COLUMNS = OUR_COLUMNS + RATER_SUMMARY_COLUMNS
 
@@ -50,8 +50,8 @@ def add_summary_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["total_errors"]        = df[OUR_COLUMNS].sum(axis=1)
     df["total_significant"]   = df[SIGNIFICANT_COLUMNS].sum(axis=1)
     df["total_insignificant"] = df[INSIGNIFICANT_COLUMNS].sum(axis=1)
-    if "reads_score" not in df.columns:
-        df["reads_score"] = 0.0
+    if "discern_score" not in df.columns:
+        df["discern_score"] = 0.0
     return df
 
 
@@ -126,19 +126,19 @@ def compare_radevalx(
     return pd.DataFrame(_run_metrics(merged, RATER_COMPARE_COLUMNS))
 
 
-def correlate_reads_score_with_counts(df_ours: pd.DataFrame) -> pd.DataFrame:
+def correlate_discern_score_with_counts(df_ours: pd.DataFrame) -> pd.DataFrame:
     target_cols = ["total_errors", "total_significant", "total_insignificant"]
     results = []
     for col in target_cols:
-        rho, p_spearman = spearmanr(df_ours["reads_score"], df_ours[col])
-        tau, p_tau      = kendalltau(df_ours["reads_score"], df_ours[col])
+        rho, p_spearman = spearmanr(df_ours["discern_score"], df_ours[col])
+        tau, p_tau      = kendalltau(df_ours["discern_score"], df_ours[col])
         results.append({
             "count_metric": col,
             "spearman":     rho,
             "p_spearman":   p_spearman,
             "tau":          tau,
             "p_tau":        p_tau,
-            "n_samples":    df_ours["reads_score"].notna().sum(),
+            "n_samples":    df_ours["discern_score"].notna().sum(),
         })
     return pd.DataFrame(results)
 
@@ -148,7 +148,7 @@ def plot_radevalx_counts(
     rater_table: pd.DataFrame,
     output_path: str | None = None,
 ) -> plt.Figure:
-    row_labels = ["total_errors", "total_significant", "total_insignificant", "reads_score"]
+    row_labels = ["total_errors", "total_significant", "total_insignificant", "discern_score"]
     colors     = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
     n_rows     = len(row_labels)
 
@@ -158,14 +158,14 @@ def plot_radevalx_counts(
     for row_i, metric in enumerate(row_labels):
         ax = axes[row_i][0]
 
-        if metric == "reads_score":
-            ax.hist(df_ours["reads_score"].dropna(), bins=20,
+        if metric == "discern_score":
+            ax.hist(df_ours["discern_score"].dropna(), bins=20,
                     color=colors[row_i], alpha=0.7, edgecolor="white")
-            ax.set_xlabel("ReaDS Score", fontsize=9)
+            ax.set_xlabel("discern Score", fontsize=9)
             ax.set_ylabel("Count", fontsize=9)
-            ax.set_title("ReaDS Score Distribution", fontsize=10, fontweight="bold")
-            mean_val   = df_ours["reads_score"].mean()
-            median_val = df_ours["reads_score"].median()
+            ax.set_title("discern Score Distribution", fontsize=10, fontweight="bold")
+            mean_val   = df_ours["discern_score"].mean()
+            median_val = df_ours["discern_score"].median()
             ax.axvline(mean_val,   color="black", linestyle="--", linewidth=1,
                        label=f"Mean={mean_val:.1f}")
             ax.axvline(median_val, color="gray",  linestyle=":",  linewidth=1,
@@ -207,7 +207,7 @@ def run_radevalx_comparison(
     df_ours_with_sum = add_summary_columns(df_ours)
 
     metrics    = compare_radevalx(df_ours_with_sum, rater_table)
-    score_corr = correlate_reads_score_with_counts(df_ours_with_sum)
+    score_corr = correlate_discern_score_with_counts(df_ours_with_sum)
 
     if output_path:
         metrics.to_csv(output_path, index=False)
@@ -222,9 +222,9 @@ def run_radevalx_comparison(
 
 
 def extract_model_name(filename: str) -> str:
-    """Extract model name from radevalx_reads_evaluation_<model>_processed.csv"""
+    """Extract model name from radevalx_discern_evaluation_<model>_processed.csv"""
     base = os.path.basename(filename)
-    name = base.replace("radevalx_reads_evaluation_", "").replace("_processed.csv", "")
+    name = base.replace("radevalx_discern_evaluation_", "").replace("_processed.csv", "")
     # handle the double-suffix .csv_processed.csv pattern
     name = name.replace(".csv", "")
     return name
@@ -275,13 +275,13 @@ def process_directory(
     df_radevalx: pd.DataFrame,
 ) -> Tuple[Dict[str, dict], pd.DataFrame, pd.DataFrame]:
     """
-    Find all radevalx_reads_evaluation_*_processed.csv files in directory
+    Find all radevalx_discern_evaluation_*_processed.csv files in directory
     and run the full radevalx comparison for each.
     """
     # Handle both naming conventions: _processed.csv and .csv_processed.csv
     patterns     = [
-        os.path.join(directory, "radevalx_reads_evaluation_*_processed.csv"),
-        os.path.join(directory, "radevalx_reads_evaluation_*.csv_processed.csv"),
+        os.path.join(directory, "radevalx_discern_evaluation_*_processed.csv"),
+        os.path.join(directory, "radevalx_discern_evaluation_*.csv_processed.csv"),
     ]
     input_files = sorted(set(f for p in patterns for f in glob.glob(p)))
 
@@ -315,7 +315,7 @@ def process_directory(
 
             print("\n-- Tau-b + Spearman + MAE vs Radevalx --")
             print(metrics.to_string(index=False))
-            print("\n-- ReaDS Score vs Error Count Correlations --")
+            print("\n-- discern Score vs Error Count Correlations --")
             print(score_corr.to_string(index=False))
 
             all_results[model_name] = {
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Run Radevalx comparison for all radevalx_reads_evaluation_*_processed.csv files."
+        description="Run Radevalx comparison for all radevalx_discern_evaluation_*_processed.csv files."
     )
     parser.add_argument(
         "directory",

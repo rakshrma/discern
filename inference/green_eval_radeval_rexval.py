@@ -347,14 +347,14 @@ def load_gema_model(repo_id: str, subfolder: str):
     """Load GEMA model and processor.
 
     Requires transformers >= 4.43 for LLaMA3 rope_scaling support.
-    Run from your main conda env (reads), NOT the green_score venv.
+    Run from your main conda env (discern), NOT the green_score venv.
     """
     import transformers as _tr
     from packaging import version as _v
     if _v.parse(_tr.__version__) < _v.parse("4.43.0"):
         raise RuntimeError(
             f"transformers {_tr.__version__} is too old for GEMA (LLaMA3 rope_scaling). "
-            f"Need >= 4.43.0. Switch to the reads conda env: conda activate reads"
+            f"Need >= 4.43.0. Switch to the discern conda env: conda activate discern"
         )
 
     print(f"Loading GEMA model: {repo_id}/{subfolder} ...")

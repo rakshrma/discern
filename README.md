@@ -264,9 +264,9 @@ from src.get_discern_score import process_csv
 
 df = process_csv(
     input_path="path/to/evaluation_results.csv",
-    findings_column="reads_eval",
+    findings_column="discern_eval",
 )
-print(df[["reads_score"]].describe())
+print(df[["discern_score"]].describe())
 ```
 
 Or process an entire directory of evaluation files:
@@ -276,7 +276,7 @@ from src.get_discern_score import process_directory
 
 results = process_directory(
     directory="path/to/results/",
-    findings_column="reads_eval",
+    findings_column="discern_eval",
 )
 ```
 

@@ -6,6 +6,7 @@ from extract_entities import run_entity_extraction
 from generate_attributes import run_compare_workflow
 from evaluate_significance import run_clinical_significance_workflow
 from utils import merge_common_with_missing_extra, merge_attributes_with_significance
+from get_discern_score import compute_discern_score
 
 
 def run_evaluation(
@@ -78,12 +79,16 @@ def run_evaluation(
 
     print("significance attribution: ",significance)
 
-    reads_evaluation = merge_attributes_with_significance(
+    discern_evaluation = merge_attributes_with_significance(
         merged_attributes=merged_entities,
         significance_output=significance,
     )
 
-    print("Final discern evaluation: ",reads_evaluation)
+    print("Final discern evaluation: ",discern_evaluation)
+
+    discern_score = compute_discern_score(discern_evaluation)
+
+    # print("Final Discern evaluation: ",discern_evaluation)
 
     # 5) Final merge
-    return reads_evaluation
+    return discern_evaluation, discern_score

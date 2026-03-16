@@ -134,7 +134,7 @@ def compute_entity_penalty(f: dict) -> float:
     return significance * raw_penalty
 
 
-def compute_reads_score(findings: list) -> float:
+def compute_discern_score(findings: list) -> float:
     if not findings:
         return 0.0
     total_penalty = sum(compute_entity_penalty(f) for f in findings)
@@ -152,7 +152,7 @@ def process_csv(input_path, findings_column, output_path=None):
     count_rows = parsed.apply(compute_counts)
     count_df   = pd.DataFrame(count_rows.tolist())
 
-    df["reads_score"] = parsed.apply(compute_reads_score)
+    df["discern_score"] = parsed.apply(compute_discern_score)
     df = pd.concat([df, count_df], axis=1)
     df.to_csv(output_path, index=False)
     print(f"Saved processed file to: {output_path}")
@@ -160,8 +160,8 @@ def process_csv(input_path, findings_column, output_path=None):
 
 
 def process_directory(directory, findings_column):
-    """Find all radevalx_reads_evaluation_*.csv files in directory and process each."""
-    pattern      = os.path.join(directory, "radevalx_reads_evaluation_*.csv")
+    """Find all radevalx_discern_evaluation_*.csv files in directory and process each."""
+    pattern      = os.path.join(directory, "radevalx_discern_evaluation_*.csv")
     input_files  = glob.glob(pattern)
 
     # Exclude already-processed files
@@ -180,7 +180,7 @@ def process_directory(directory, findings_column):
         print(f"Processing: {filename}")
         try:
             df = process_csv(input_path, findings_column, output_path)
-            print(df[["reads_score"]].describe())
+            print(df[["discern_score"]].describe())
             all_results[filename] = df
         except Exception as e:
             print(f"  ERROR processing {filename}: {e}")
@@ -193,18 +193,18 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Process radevalx_reads_evaluation_*.csv files in a directory."
+        description="Process radevalx_discern_evaluation_*.csv files in a directory."
     )
     parser.add_argument(
         "directory",
         nargs="?",
         default="../data/radevalx",
-        help="Directory containing radevalx_reads_evaluation_*.csv files",
+        help="Directory containing radevalx_discern_evaluation_*.csv files",
     )
     parser.add_argument(
         "--findings-column",
-        default="reads_eval",
-        help="Name of the column containing findings (default: reads_eval)",
+        default="discern_eval",
+        help="Name of the column containing findings (default: discern_eval)",
     )
     args = parser.parse_args()
 

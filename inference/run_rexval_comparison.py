@@ -42,7 +42,7 @@ OUR_COLUMNS = [
 SIGNIFICANT_COLUMNS   = [c for c in OUR_COLUMNS if c.endswith("_significant")]
 INSIGNIFICANT_COLUMNS = [c for c in OUR_COLUMNS if c.endswith("_insignificant")]
 
-SUMMARY_COLUMNS     = ["total_errors", "total_significant", "total_insignificant", "reads_score"]
+SUMMARY_COLUMNS     = ["total_errors", "total_significant", "total_insignificant", "discern_score"]
 ALL_COMPARE_COLUMNS = OUR_COLUMNS + SUMMARY_COLUMNS
 
 
@@ -55,8 +55,8 @@ def add_summary_columns(df: pd.DataFrame) -> pd.DataFrame:
     df["total_errors"]        = df[OUR_COLUMNS].sum(axis=1)
     df["total_significant"]   = df[SIGNIFICANT_COLUMNS].sum(axis=1)
     df["total_insignificant"] = df[INSIGNIFICANT_COLUMNS].sum(axis=1)
-    if "reads_score" not in df.columns:
-        df["reads_score"] = 0.0
+    if "discern_score" not in df.columns:
+        df["discern_score"] = 0.0
     return df
 
 
@@ -101,19 +101,19 @@ def build_avg_rater_table(df_rater_table: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def correlate_reads_score_with_counts(df_ours: pd.DataFrame) -> pd.DataFrame:
+def correlate_discern_score_with_counts(df_ours: pd.DataFrame) -> pd.DataFrame:
     target_cols = ["total_errors", "total_significant", "total_insignificant"]
     results = []
     for col in target_cols:
-        rho,  p_spearman = spearmanr(df_ours["reads_score"], df_ours[col])
-        tau,  p_tau      = kendalltau(df_ours["reads_score"], df_ours[col])
+        rho,  p_spearman = spearmanr(df_ours["discern_score"], df_ours[col])
+        tau,  p_tau      = kendalltau(df_ours["discern_score"], df_ours[col])
         results.append({
             "count_metric": col,
             "spearman":     rho,
             "p_spearman":   p_spearman,
             "tau":          tau,
             "p_tau":        p_tau,
-            "n_samples":    df_ours["reads_score"].notna().sum(),
+            "n_samples":    df_ours["discern_score"].notna().sum(),
         })
     return pd.DataFrame(results)
 
@@ -202,7 +202,7 @@ def plot_counts(
     n_raters      = len(rater_indices)
     n_cols        = n_raters + 1
     n_rows        = 4
-    row_labels    = ["total_errors", "total_significant", "total_insignificant", "reads_score"]
+    row_labels    = ["total_errors", "total_significant", "total_insignificant", "discern_score"]
     colors        = ["#4C72B0", "#DD8452", "#55A868", "#C44E52"]
 
     fig, axes = plt.subplots(
@@ -218,7 +218,7 @@ def plot_counts(
         for col_i, rater_index in enumerate(rater_indices):
             ax = axes[row_i][col_i]
 
-            if metric == "reads_score":
+            if metric == "discern_score":
                 ax.set_visible(False)
                 continue
 
@@ -241,13 +241,13 @@ def plot_counts(
 
         ax = axes[row_i][n_cols - 1]
 
-        if metric == "reads_score":
-            ax.hist(df_ours["reads_score"].dropna(), bins=20, color=colors[row_i], alpha=0.7, edgecolor="white")
-            ax.set_xlabel("ReaDS Score", fontsize=8)
+        if metric == "discern_score":
+            ax.hist(df_ours["discern_score"].dropna(), bins=20, color=colors[row_i], alpha=0.7, edgecolor="white")
+            ax.set_xlabel("discern Score", fontsize=8)
             ax.set_ylabel("Count", fontsize=8)
-            ax.set_title("ReaDS Score\nDistribution", fontsize=9, fontweight="bold")
-            mean_val   = df_ours["reads_score"].mean()
-            median_val = df_ours["reads_score"].median()
+            ax.set_title("discern Score\nDistribution", fontsize=9, fontweight="bold")
+            mean_val   = df_ours["discern_score"].mean()
+            median_val = df_ours["discern_score"].median()
             ax.axvline(mean_val,   color="black", linestyle="--", linewidth=1, label=f"Mean={mean_val:.1f}")
             ax.axvline(median_val, color="gray",  linestyle=":",  linewidth=1, label=f"Median={median_val:.1f}")
             ax.legend(fontsize=6)
@@ -297,7 +297,7 @@ def run_rexval_comparison(
 
     tau_per_rater = compare_with_raters(df_ours_with_sums, rater_table)
     tau_avg_rater = compare_with_avg_raters(df_ours_with_sums, avg_rater_table)
-    score_corr    = correlate_reads_score_with_counts(df_ours_with_sums)
+    score_corr    = correlate_discern_score_with_counts(df_ours_with_sums)
 
     if output_path is not None:
         tau_per_rater.to_csv(output_path, index=False)
@@ -315,10 +315,10 @@ def run_rexval_comparison(
 
 
 def extract_model_name(filename: str) -> str:
-    """Extract model name from rexval_reads_evaluation_<model>_processed.csv"""
+    """Extract model name from rexval_discern_evaluation_<model>_processed.csv"""
     base = os.path.basename(filename)
     # Strip prefix and suffix
-    name = base.replace("rexval_reads_evaluation_", "").replace("_processed.csv", "")
+    name = base.replace("rexval_discern_evaluation_", "").replace("_processed.csv", "")
     return name
 
 
@@ -329,11 +329,11 @@ def process_directory(
     study_id_col: str = "study_id",
 ) -> Dict[str, dict]:
     """
-    Find all rexval_reads_evaluation_*_processed.csv files in directory
+    Find all rexval_discern_evaluation_*_processed.csv files in directory
     and run the full rexval comparison for each, saving outputs alongside
     the input files.
     """
-    pattern = os.path.join(directory, "rexval_reads_evaluation_*_processed.csv")
+    pattern = os.path.join(directory, "rexval_discern_evaluation_*_processed.csv")
     processed_files = sorted(glob.glob(pattern))
 
     if not processed_files:
@@ -368,7 +368,7 @@ def process_directory(
                 score_corr_path=score_corr_path,
             )
 
-            print("\n-- ReaDS Score vs Error Count Correlations --")
+            print("\n-- discern Score vs Error Count Correlations --")
             print(score_corr.to_string(index=False))
             print("\n-- Tau-b + Spearman + MAE vs average rater --")
             print(tau_avg_rater.to_string(index=False))
@@ -443,7 +443,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Run ReXVal comparison for all rexval_reads_evaluation_*_processed.csv files."
+        description="Run ReXVal comparison for all rexval_discern_evaluation_*_processed.csv files."
     )
     parser.add_argument(
         "directory",
