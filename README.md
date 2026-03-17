@@ -6,10 +6,6 @@
 
 **DISCERN** is an LLM-powered evaluation framework designed to assess the clinical accuracy of AI-generated radiology reports by comparing them against radiologist-authored ground truth reports. Unlike traditional NLP metrics (BLEU, ROUGE, BERTScore), DISCERN operates at the *clinical entity level*, capturing diagnostically meaningful discrepancies and weighting them by their clinical significance — providing evaluation scores that align with how radiologists actually judge report quality.
 
-### Authors
-
-**Rakesh Sharma**, **Cameron Beeche**, **Jessie Dong**, **Richard Zhuang**, **Huaizhi Qu**, **Ruichen Zhang**, **Vineeth Gangaram**, **Pulak Goswami**, **Jiayi Xin**, **Jenna Ballard**, **Ari Goldberg**, **Hersh Sagreiya**, **Qi Long**, **Tianlong Chen**, **Walter Witschey**
-
 ---
 
 ## Table of Contents
