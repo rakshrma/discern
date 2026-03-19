@@ -20,6 +20,7 @@
 - [Usage](#usage)
 - [Evaluation and Benchmarking](#evaluation-and-benchmarking)
 - [Supported LLM Backends](#supported-llm-backends)
+- [Testing](#testing)
 - [Citation](#citation)
 - [License](#license)
 
@@ -71,6 +72,7 @@ discern/
 ├── README.md
 ├── setup.py                               # Package installation configuration
 ├── requirements.txt                       # Python dependencies
+├── pytest.ini                             # Pytest configuration and custom markers
 ├── config/
 │   ├── attribute_extraction_prompt.yaml   # Prompt template for attribute comparison
 │   ├── diagnosis_only.yaml                # Diagnosis-level entity taxonomy
@@ -92,6 +94,8 @@ discern/
 │   ├── get_discern_score.py               # DISCERN score computation and aggregation
 │   ├── section_parsing.py                 # Report section parsing (local HF models)
 │   └── utils.py                           # Entity merging and helper utilities
+├── tests/
+│   └── test_discern.py                    # Unit and integration test suite (77 tests)
 └── inference/                             # Benchmarking and comparison scripts
     ├── green_eval_radeval_rexval.py        # GREEN metric evaluation comparison
     ├── inference_radeval.py               # RadEvalX inference runner
@@ -339,6 +343,70 @@ DISCERN supports two inference backends:
 | **Hugging Face Transformers** | Local GPU inference for open-source models | Set token in `config/.hftoken` |
 
 The backend is automatically selected based on the model name: models prefixed with `databricks-` route to the Databricks endpoint; all others use the local Hugging Face pipeline.
+
+---
+
+## Testing
+
+DISCERN includes a comprehensive test suite (`tests/test_discern.py`) with **77 tests** across two tiers.
+
+### Test Environment
+
+Tests are designed to run in the `reads` conda environment:
+
+```bash
+conda activate reads
+```
+
+All required packages (`pydantic`, `PyYAML`, `openai`, `pandas`, `torch`, `transformers`, etc.) must satisfy the versions in `requirements.txt`.
+
+### Running Tests
+
+**Unit tests only** (no LLM required, runs in seconds):
+
+```bash
+pytest tests/test_discern.py -v -m "not integration"
+```
+
+**Integration tests** (requires `meta-llama/Llama-3.1-8B-Instruct` loaded locally via HuggingFace and a valid `config/.hftoken`):
+
+```bash
+pytest tests/test_discern.py -v -m integration
+```
+
+**All tests:**
+
+```bash
+pytest tests/test_discern.py -v
+```
+
+### Test Coverage
+
+| Test Class | Module | # Tests | Description |
+|---|---|---|---|
+| `TestParseFindings` | `get_discern_score` | 5 | Empty, NaN, valid/invalid string parsing |
+| `TestComputeEntityPenalty` | `get_discern_score` | 8 | Concordant/discordant/partial/zero-significance penalties |
+| `TestComputeDiscernScore` | `get_discern_score` | 5 | Empty list, single entity, multi-entity aggregation |
+| `TestComputeCounts` | `get_discern_score` | 5 | Error bucket counting by type and significance |
+| `TestMergeCommonWithMissingExtra` | `utils` | 9 | Missing/extra entity detection, presence flags, whitespace normalization |
+| `TestMergeAttributesWithSignificance` | `utils` | 7 | Strict/non-strict merging, field preservation, error paths |
+| `TestSanitizeJsonText` | `extract_entities` | 5 | Trailing commas, curly quotes, whitespace stripping |
+| `TestExtractFirstJsonArray` | `extract_entities` | 6 | Nested arrays, escaped quotes, preamble text |
+| `TestValidateEntities` | `extract_entities` | 5 | Invalid/duplicate/missing-key entity filtering |
+| `TestBuildMessages` | `extract_entities` | 4 | Message structure, roles, and content injection |
+| `TestIsDb` | `call_llm` | 7 | Databricks vs HuggingFace model routing logic |
+| `TestQueryLlmMocked` | `call_llm` | 2 | Mocked HF and Databricks backend dispatch |
+| `TestQueryLlmIntegration` *(integration)* | `call_llm` | 2 | Live generation with `llama-3.1-8b-instruct` |
+| `TestEntityExtractionIntegration` *(integration)* | `extract_entities` | 4 | End-to-end entity extraction, schema validation |
+| `TestEndToEndEvaluationIntegration` *(integration)* | `evaluate_reports` | 3 | Concordant vs discordant scoring, output field validation |
+
+### Integration Test Model
+
+Integration tests use `meta-llama/Llama-3.1-8B-Instruct` via the HuggingFace Transformers pipeline. Ensure:
+
+- A valid HuggingFace token is saved to `config/.hftoken`
+- A CUDA-capable GPU is available (the model loads in `bfloat16`)
+- The model is accessible on HuggingFace (requires accepting the Llama 3.1 license)
 
 ---
 
