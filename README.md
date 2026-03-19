@@ -17,7 +17,9 @@
 - [Scoring System](#scoring-system)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Quickstart Example](#quickstart-example)
 - [Usage](#usage)
+- [Output Format](#output-format)
 - [Evaluation and Benchmarking](#evaluation-and-benchmarking)
 - [Supported LLM Backends](#supported-llm-backends)
 - [Testing](#testing)
@@ -94,6 +96,7 @@ discern/
 │   ├── get_discern_score.py               # DISCERN score computation and aggregation
 │   ├── section_parsing.py                 # Report section parsing (local HF models)
 │   └── utils.py                           # Entity merging and helper utilities
+├── run_example.py                         # Self-contained quickstart script (llama-3.1-8b-instruct)
 ├── tests/
 │   └── test_discern.py                    # Unit and integration test suite (77 tests)
 └── inference/                             # Benchmarking and comparison scripts
@@ -237,6 +240,85 @@ All prompts and entity definitions are stored as YAML files in the `config/` dir
 
 ---
 
+## Quickstart Example
+
+The fastest way to try DISCERN is with the included `run_example.py` script. It uses `meta-llama/Llama-3.1-8B-Instruct` via HuggingFace and runs the full pipeline on a built-in pair of sample radiology reports.
+
+**Step 1 — Save your HuggingFace token:**
+
+```bash
+echo "hf_YOUR_TOKEN_HERE" > config/.hftoken
+```
+
+**Step 2 — Install dependencies:**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Step 3 — Run:**
+
+```bash
+python run_example.py
+```
+
+The script will download and cache the model on first run, then print per-entity evaluation results and a final DISCERN score. Example output:
+
+```
+============================================================
+DISCERN Evaluation Pipeline
+Model : meta-llama/Llama-3.1-8B-Instruct
+============================================================
+
+[Ground Truth Report]
+FINDINGS: The cardiac silhouette is enlarged. There is a moderate
+right-sided pleural effusion. Patchy airspace opacity is present
+in the right lower lobe, consistent with pneumonia...
+
+[Candidate Report]
+FINDINGS: The heart size appears normal. There is a small left-sided
+pleural effusion. The lungs are clear without focal consolidation...
+
+Running evaluation...
+
+============================================================
+DISCERN Score: 18.00
+============================================================
+
+Entities evaluated: 3
+
+[1] Heart :: Enlarged Cardiac Contour
+     Reference finding : The cardiac silhouette is enlarged.
+     Candidate finding : The heart size appears normal.
+     Diagnosis         : discordant
+     Location          : concordant
+     Severity          : not mentioned
+     Temporal          : not mentioned
+     Significance      : 3 / 4
+     Rationale         : Mischaracterizing cardiac size may alter workup for heart failure.
+
+[2] Pleural :: Pleural Effusion
+     Reference finding : Moderate right-sided pleural effusion.
+     Candidate finding : Small left-sided pleural effusion.
+     Diagnosis         : concordant
+     Location          : discordant
+     Severity          : discordant
+     Temporal          : not mentioned
+     Significance      : 2 / 4
+     Rationale         : Laterality and size discrepancy may affect drainage decisions.
+
+[3] Infectious Disease :: Pneumonia
+     Reference finding : Patchy airspace opacity in the right lower lobe, consistent with pneumonia.
+     Candidate finding : (not mentioned)
+     Discrepancy type  : missing_in_candidate
+     Significance      : 4 / 4
+     Rationale         : Missed pneumonia is a critical omission requiring immediate treatment.
+```
+
+> **Note:** Actual output will vary depending on the model's inference. DISCERN scores reflect the clinical severity of discrepancies, not text similarity.
+
+---
+
 ## Usage
 
 ### End-to-End Report Evaluation
@@ -317,6 +399,40 @@ status, raw_output, sections = run_single_report(
 print(sections.findings)
 print(sections.impression)
 ```
+
+---
+
+## Output Format
+
+`run_evaluation()` returns a tuple `(discern_evaluation, discern_score)`.
+
+- **`discern_score`** (`float`) — The aggregate DISCERN score for the report pair. Higher values indicate greater clinical divergence. A score of `0.0` means full concordance across all entities.
+
+- **`discern_evaluation`** (`list[dict]`) — One dictionary per evaluated entity. Each dictionary contains the following keys:
+
+| Key | Type | Description |
+|---|---|---|
+| `entity` | `str` | The clinical entity name in `Category :: Entity` format (e.g., `"Heart :: Enlarged Cardiac Contour"`). Drawn from the entity taxonomy in `config/entities.yaml`. |
+| `reference_report_finding` | `str \| None` | The sentence(s) in the ground truth report that mention this entity. `None` for entities missing in the reference. |
+| `candidate_report_finding` | `str \| None` | The sentence(s) in the candidate report that mention this entity. `None` for entities missing in the candidate. |
+| `diagnosis_concordance` | `str` | Whether the candidate agrees on the diagnostic interpretation. One of: `concordant`, `partial`, `discordant`. Only set for entities present in both reports. |
+| `location_concordance` | `str` | Whether the anatomical location is consistent. One of: `concordant`, `partial`, `discordant`, `candidate-adds`, `candidate-misses`, `not mentioned`. |
+| `severity_concordance` | `str` | Whether the severity assessment matches. Same label set as `location_concordance`. |
+| `temporal_comparison` | `str` | Whether the temporal characterization (new, stable, worsening) aligns. Same label set as `location_concordance`. |
+| `discrepancy_type` | `str \| None` | Set only for entities found in one report but not the other. `"missing_in_candidate"` means the entity is in the reference but absent in the candidate (omission). `"extra_in_candidate"` means it is in the candidate but not the reference (false prediction). `None` for entities present in both reports. |
+| `significance_score` | `int` | Clinical significance of the discrepancy on a 0–4 scale (see [Scoring System](#scoring-system)). `0` indicates no meaningful impact; `4` indicates a critical, time-sensitive discrepancy. |
+| `rationale` | `str` | LLM-generated explanation justifying the significance score in clinical terms. |
+
+### Concordance Label Definitions
+
+| Label | Applies To | Meaning |
+|---|---|---|
+| `concordant` | All dimensions | Both reports agree on this attribute |
+| `partial` | All dimensions | Partial agreement with minor differences |
+| `discordant` | All dimensions | Reports disagree on this attribute |
+| `candidate-adds` | Location, Severity, Temporal | Candidate report includes this attribute but the reference does not |
+| `candidate-misses` | Location, Severity, Temporal | Reference report includes this attribute but the candidate does not |
+| `not mentioned` | All dimensions | This attribute is not applicable or not described for this entity |
 
 ---
 
