@@ -15,25 +15,27 @@ Usage:
 """
 
 import json
-import os
 import sys
 from pathlib import Path
 
-# Make src/ importable
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+_SRC = Path(__file__).parent / "src"
+sys.path.insert(0, str(_SRC))
 
 from evaluate_reports import run_evaluation
+from call_llm import LLMConfig
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-MODEL = "meta-llama/Llama-3.1-8B-Instruct"
-HF_TOKEN_PATH = "config/.hftoken"
+_CFG = Path(__file__).parent / "config"
 
-ENTITY_PROMPT       = "config/entity_extraction_prompt.yaml"
-ENTITIES_YAML       = "config/entities.yaml"
-ATTRIBUTE_PROMPT    = "config/attribute_extraction_prompt.yaml"
-SIGNIFICANCE_PROMPT = "config/significance_prompt.yaml"
+MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+HF_TOKEN_PATH = str(_CFG / ".hftoken")
+
+ENTITY_PROMPT       = str(_CFG / "entity_extraction_prompt.yaml")
+ENTITIES_YAML       = str(_CFG / "entities.yaml")
+ATTRIBUTE_PROMPT    = str(_CFG / "attribute_extraction_prompt.yaml")
+SIGNIFICANCE_PROMPT = str(_CFG / "significance_prompt.yaml")
 
 # ---------------------------------------------------------------------------
 # Sample reports
@@ -83,11 +85,15 @@ def main():
     print("\nRunning evaluation — this may take a few minutes on first run")
     print("(model weights are downloaded and cached on first use)...\n")
 
+    cfg = LLMConfig(
+        model=MODEL,
+        hf_token_path=HF_TOKEN_PATH,
+    )
+
     discern_evaluation, discern_score = run_evaluation(
         report_text=GROUND_TRUTH_REPORT,
         candidate_text=CANDIDATE_REPORT,
-        model=MODEL,
-        token_path=HF_TOKEN_PATH,
+        cfg=cfg,
         prompt_yaml_path=ENTITY_PROMPT,
         entities_yaml_path=ENTITIES_YAML,
         attribute_prompt_path=ATTRIBUTE_PROMPT,

@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import yaml
 from pydantic import BaseModel, ConfigDict, RootModel, StrictStr
 
-from call_llm import query_llm, get_token_usage, reset_token_usage
+from call_llm import query_llm, get_token_usage, reset_token_usage, LLMConfig
+from utils import sanitize_json_text, extract_first_json_value
 
 
 # -------------------------
@@ -68,40 +69,9 @@ class ExtractionOutput(RootModel[List[EntityDecision]]):
 # -------------------------
 # JSON extraction helpers
 # -------------------------
-_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
-
-
-def sanitize_json_text(s: str) -> str:
-    s = s.replace("\u201c", '"').replace("\u201d", '"').replace("\u2019", "'")
-    return _TRAILING_COMMA_RE.sub(r"\1", s).strip()
-
 
 def extract_first_json_array(text: str) -> Optional[str]:
-    start = text.find("[")
-    if start == -1:
-        return None
-
-    depth, in_str, escape = 0, False, False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_str = False
-            continue
-
-        if ch == '"':
-            in_str = True
-        elif ch == "[":
-            depth += 1
-        elif ch == "]":
-            depth -= 1
-            if depth == 0:
-                return text[start: i + 1]
-    return None
+    return extract_first_json_value(text)
 
 
 # -------------------------
@@ -196,17 +166,17 @@ def validate_entities(out_list: List[Dict[str, Any]], allowed_entities: Set[str]
 def _call_parse_validate(
     msgs: List[Dict[str, str]],
     *,
-    model: str,
-    token_path: str,
+    cfg: LLMConfig,
     allowed_entities: Set[str],
-    max_tokens: int = 2000,
 ) -> Tuple[List[Dict[str, Any]], str]:
-    raw = query_llm(messages=msgs, model=model, token_path=token_path, max_tokens=max_tokens)
-
+    raw = query_llm(
+        messages=msgs,
+        model=cfg.model,
+        token_path=cfg.token_path,
+        hf_token_path=cfg.hf_token_path,
+        max_tokens=cfg.max_tokens,
+    )
     print(get_token_usage())
-    # {'prompt_tokens': 154, 'completion_tokens': 312, 'total_tokens': 466}
-
-    # reset when starting a new experiment
     reset_token_usage()
 
     if not isinstance(raw, str):
@@ -223,20 +193,15 @@ def _call_parse_validate(
 # -------------------------
 def run_entity_extraction(
     *,
-    model: str,
-    token_path: str,
+    cfg: LLMConfig,
     prompt_yaml_path: str,
     entities_yaml_path: str,
     report_text: str,
     require_all_entities: bool = False,
     enable_repair: bool = True,
-    max_tokens: int = 2000,
 ) -> List[Dict[str, Any]]:
-    ExtractionRequest.model_validate(
-        {"report_text": report_text, "prompt_yaml_path": prompt_yaml_path, "entities_yaml_path": entities_yaml_path}
-    )
-    if not report_text.strip():
-        raise ValueError("report_text is empty.")
+    if not isinstance(report_text, str) or not report_text.strip():
+        raise ValueError("report_text must be a non-empty string.")
 
     prompt_yaml = load_prompt_yaml(prompt_yaml_path)
     entities_yaml = load_entities_yaml(entities_yaml_path)
@@ -247,7 +212,7 @@ def run_entity_extraction(
 
     raw = ""
     try:
-        out, raw = _call_parse_validate(messages, model=model, token_path=token_path, allowed_entities=allowed_entities, max_tokens=max_tokens)
+        out, raw = _call_parse_validate(messages, cfg=cfg, allowed_entities=allowed_entities)
         return out
     except Exception as e:
         if not enable_repair:
@@ -260,7 +225,7 @@ def run_entity_extraction(
             error_msg=str(e),
         )
         try:
-            out2, _ = _call_parse_validate(repair_messages, model=model, token_path=token_path, allowed_entities=allowed_entities, max_tokens=max_tokens)
+            out2, _ = _call_parse_validate(repair_messages, cfg=cfg, allowed_entities=allowed_entities)
             return out2
         except Exception as repair_exc:
             raise RuntimeError(f"Repair attempt also failed: {repair_exc!r}")

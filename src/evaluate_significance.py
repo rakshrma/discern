@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import re
-import textwrap
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -11,7 +9,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, StrictStr, ValidationError, conint
 
-from call_llm import query_llm, get_token_usage, reset_token_usage
+from call_llm import query_llm, get_token_usage, reset_token_usage, LLMConfig
+from utils import sanitize_json_text, extract_first_json_value
 
 
 # ============================================================
@@ -36,51 +35,11 @@ class PromptYAML(BaseModel):
 
 
 _CLINICAL_SIGNIFICANCE_SCHEMA = ClinicalSignificanceOutput.model_json_schema()
-_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 
 
 # ============================================================
 # ---------------- JSON Helpers ------------------------------
 # ============================================================
-
-def sanitize_json_text(s: str) -> str:
-    s = s.replace("\u201c", '"').replace("\u201d", '"').replace("\u2019", "'")
-    return _TRAILING_COMMA_RE.sub(r"\1", s).strip()
-
-
-def extract_first_json_value(text: str) -> Optional[str]:
-    obj_start = text.find("{")
-    arr_start = text.find("[")
-
-    if obj_start == -1 and arr_start == -1:
-        return None
-
-    start = obj_start if (obj_start != -1 and (arr_start == -1 or obj_start < arr_start)) else arr_start
-    open_ch = text[start]
-    close_ch = "}" if open_ch == "{" else "]"
-
-    depth, in_str, escape = 0, False, False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_str = False
-            continue
-
-        if ch == '"':
-            in_str = True
-        elif ch == open_ch:
-            depth += 1
-        elif ch == close_ch:
-            depth -= 1
-            if depth == 0:
-                return text[start: i + 1]
-    return None
-
 
 def parse_json_from_raw(raw: str) -> Any:
     json_text = sanitize_json_text(extract_first_json_value(raw) or raw)
@@ -190,10 +149,7 @@ def validate_significance_with_one_repair(
     *,
     entities: List[Dict[str, Any]],
     raw_output: str,
-    model_name: Optional[str],
-    token_path: str,
-    max_tokens: int,
-    temperature: float,
+    cfg: LLMConfig,
 ) -> Dict[str, Any]:
     required_entities = [e["entity"] for e in entities]
 
@@ -208,10 +164,11 @@ def validate_significance_with_one_repair(
         )
         repaired_raw = query_llm(
             messages=repair_messages,
-            model=model_name,
-            token_path=token_path,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            model=cfg.model,
+            token_path=cfg.token_path,
+            hf_token_path=cfg.hf_token_path,
+            max_tokens=cfg.max_tokens,
+            temperature=cfg.temperature,
         )
         print(get_token_usage())
         reset_token_usage()
@@ -227,20 +184,21 @@ def run_clinical_significance_workflow(
     ground_truth_report: str,
     entities: List[Dict[str, Any]],
     prompt_yaml_path: str,
-    model_name: Optional[str] = None,
-    token_path: str = "",
-    max_tokens: int = 1000,
-    temperature: float = 0.1,
+    cfg: Optional[LLMConfig] = None,
 ) -> Dict[str, Any]:
+    from call_llm import LLMConfig as _LLMConfig
+    cfg = cfg or _LLMConfig(model="databricks-claude-sonnet-4-5")
+
     system_prompt = _load_prompt_yaml(prompt_yaml_path).prompt
     messages = build_messages(system_prompt, ground_truth_report, entities)
 
     raw_output = query_llm(
         messages=messages,
-        model=model_name,
-        token_path=token_path,
-        max_tokens=max_tokens,
-        temperature=temperature,
+        model=cfg.model,
+        token_path=cfg.token_path,
+        hf_token_path=cfg.hf_token_path,
+        max_tokens=cfg.max_tokens,
+        temperature=cfg.temperature,
     )
     print(get_token_usage())
     reset_token_usage()
@@ -251,8 +209,5 @@ def run_clinical_significance_workflow(
     return validate_significance_with_one_repair(
         entities=entities,
         raw_output=raw_output,
-        model_name=model_name,
-        token_path=token_path,
-        max_tokens=max_tokens,
-        temperature=temperature,
+        cfg=cfg,
     )

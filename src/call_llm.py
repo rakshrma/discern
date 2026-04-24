@@ -3,6 +3,7 @@ import os
 import asyncio
 import logging
 import time
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Dict, List, Optional
 from openai import OpenAI, AsyncOpenAI
@@ -20,9 +21,20 @@ class InputTooLongError(RuntimeError):
     """Raised when the input prompt exceeds the model's context window."""
 
 
-DEFAULT_DB_TOKEN = "/vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace/reads/config/.databricks.token"
-DEFAULT_HF_TOKEN = "/vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace/reads/config/.hftoken"
+DEFAULT_DB_TOKEN = "/vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace/discern/config/.databricks.token"
+DEFAULT_HF_TOKEN = "/vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace/discern/config/.hftoken"
 DEFAULT_DB_BASE_URL = "https://adb-624977420987022.2.azuredatabricks.net/serving-endpoints"
+
+
+@dataclass
+class LLMConfig:
+    """Unified configuration passed through the entire pipeline."""
+    model: str
+    token_path: str = DEFAULT_DB_TOKEN
+    hf_token_path: str = DEFAULT_HF_TOKEN
+    db_base_url: str = DEFAULT_DB_BASE_URL
+    max_tokens: int = 5000
+    temperature: float = 0.1
 
 # --------------- cumulative token counters ---------------
 _token_usage: Dict[str, int] = {
@@ -87,6 +99,12 @@ def _async_client_db(token_path: str, base_url: str) -> AsyncOpenAI:
 # ---------------------------------------------------------
 
 @lru_cache(maxsize=4)
+def _load_tokenizer(model: str, hf_token: Optional[str] = None):
+    from transformers import AutoTokenizer
+    return AutoTokenizer.from_pretrained(model, token=hf_token, trust_remote_code=True)
+
+
+@lru_cache(maxsize=4)
 def _load_vllm_model(model: str, hf_token: Optional[str] = None):
     """Load a model using vLLM (first call only, cached thereafter)."""
     import torch
@@ -124,6 +142,7 @@ def _unload_vllm_model():
     import torch
 
     _load_vllm_model.cache_clear()
+    _load_tokenizer.cache_clear()
     gc.collect()
     torch.cuda.empty_cache()
     print("[vLLM] GPU memory freed.")
@@ -163,13 +182,9 @@ def _query_hf(
 ) -> str:
     """Run single chat-completion locally via vLLM."""
     from vllm import SamplingParams
-    from transformers import AutoTokenizer
 
     llm = _load_vllm_model(model, hf_token)
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        model, token=hf_token, trust_remote_code=True
-    )
+    tokenizer = _load_tokenizer(model, hf_token)
     prompt = _apply_chat_template_vllm(tokenizer, messages, model)
 
     # Cap max_tokens to the model's actual context window to prevent engine crash
@@ -225,13 +240,9 @@ def _query_hf_batch(
     calling one at a time.
     """
     from vllm import SamplingParams
-    from transformers import AutoTokenizer
 
     llm = _load_vllm_model(model, hf_token)
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        model, token=hf_token, trust_remote_code=True
-    )
+    tokenizer = _load_tokenizer(model, hf_token)
 
     prompts = [
         _apply_chat_template_vllm(tokenizer, msgs, model)
@@ -451,7 +462,7 @@ def query_llm(
         return (r.choices[0].message.content or "").strip()
 
     else:
-        token = _read(hf_token_path)
+        token = hf_token or _read(hf_token_path)
         return _query_hf(messages, model, token, max_tokens, temperature)
 
 
