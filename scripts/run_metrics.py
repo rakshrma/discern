@@ -148,7 +148,7 @@ PROMPT_YAML_PATH          = _CONFIG_DIR / "entity_extraction_prompt.yaml"
 ENTITIES_YAML_PATH        = _CONFIG_DIR / "entities.yaml"
 ATTRIBUTE_PROMPT_PATH     = _CONFIG_DIR / "attribute_extraction_prompt.yaml"
 SIGNIFICANCE_YAML_PATH    = _CONFIG_DIR / "significance_prompt.yaml"
-DIAG_ENTITIES_YAML_PATH   = _CONFIG_DIR / "diagnosis.yaml"
+DIAG_ENTITIES_YAML_PATH   = _CONFIG_DIR / "diagnosis_only.yaml"
 MERGED_PROMPT_YAML_PATH   = _CONFIG_DIR / "merged_prompt.yaml"
 
 
