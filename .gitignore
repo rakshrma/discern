@@ -1,0 +1,11 @@
+config.yaml
+config/.hftoken
+config/.databricks.token
+config/.openai_api.token
+__pycache__/
+*.py[cod]
+*.pyo
+.ipynb_checkpoints/
+.DS_Store
+*.swp
+*.swo

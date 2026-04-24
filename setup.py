@@ -11,24 +11,35 @@ CORE_REQUIREMENTS = [
     "pydantic>=2.0.0",
     "PyYAML>=6.0",
     "openai>=1.0.0",
+    "anthropic>=0.25.0",
     "torch>=2.0.0",
-    "transformers>=4.30.0",
+    "transformers>=4.40.0",
+    "accelerate>=0.27.0",
 ]
 
-# Additional dependencies for benchmarking and inference scripts
-INFERENCE_REQUIREMENTS = [
+# Additional dependencies for metrics and analysis scripts
+METRICS_REQUIREMENTS = [
     "numpy>=1.23.0",
     "scipy>=1.10.0",
     "matplotlib>=3.6.0",
+    "seaborn>=0.12.0",
     "tqdm>=4.60.0",
     "nltk>=3.8.0",
     "rouge>=1.0.0",
     "bert-score>=0.3.13",
+    "scikit-learn>=1.1.0",
+    "openpyxl>=3.0.0",
+]
+
+# Radiology-specific metrics (install individually, some need checkpoints)
+RADIOLOGY_REQUIREMENTS = [
+    "RaTEScore",      # pip install RaTEScore
+    "radgraph",       # requires PhysioNet checkpoint; see README
 ]
 
 setup(
     name="discern",
-    version="0.1.0",
+    version="1.0.0",
     author="Rakesh Sharma, Cameron Beeche, Jessie Dong, Richard Zhuang, "
            "Huaizhi Qu, Ruichen Zhang, Vineeth Gangaram, Pulak Goswami, "
            "Jiayi Xin, Jenna Ballard, Ari Goldberg, Hersh Sagreiya, "
@@ -41,8 +52,9 @@ setup(
     python_requires=">=3.8",
     install_requires=CORE_REQUIREMENTS,
     extras_require={
-        "inference": INFERENCE_REQUIREMENTS,
-        "all": CORE_REQUIREMENTS + INFERENCE_REQUIREMENTS,
+        "metrics":  METRICS_REQUIREMENTS,
+        "radiology": RADIOLOGY_REQUIREMENTS,
+        "all": CORE_REQUIREMENTS + METRICS_REQUIREMENTS + RADIOLOGY_REQUIREMENTS,
     },
     package_data={
         "config": ["*.yaml"],

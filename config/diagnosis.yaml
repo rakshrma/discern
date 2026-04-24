@@ -1,0 +1,48 @@
+Congenital Disease:
+  - Congenital Lung Disease
+  - Congenital Vascular Disease
+  - Other Heart Disease
+
+Infectious Pulmonary Disease:
+  - Pneumonia
+  - Tuberculosis
+  - Other Infection
+
+Pulmonary Neoplasm:
+  - Primary Lung Malignancy
+  - Pulmonary Metastases
+  - Other Pulmonary Neoplasm
+
+Lymphoproliferative Disease:
+  - Lymphoproliferative Disease
+
+Other Pulmonary Diagnosis:
+  - Interstitial Lung Disease
+  - Sarcoidosis
+  - Asbestos-Related Disease
+  - Pneumoconiosis
+  - Pulmonary Edema
+  - ARDS
+  - Aspiration
+  - Iatrogenic Lung Disease
+  - COPD
+  - Vasculitis
+  - Pulmonary Hypertension
+  - Pulmonary Thromboembolic Disease
+  - Miscellaneous Pulmonary Disease
+
+Cardiac Disease:
+  - Valvular Heart Disease
+  - Myocardial Disease
+  - Pericardial Disease
+  - Congestive Heart Failure
+  - Other Cardiac Disease
+
+Aortic Disease:
+  - Aortic Dissection/Aneurysm
+  - Other Aortic Disease
+
+Miscellaneous Diagnosis:
+  - Trauma
+  - Post-Treatment Change
+  - Miscellaneous Disease
