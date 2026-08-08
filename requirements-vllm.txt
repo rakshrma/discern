@@ -1,0 +1,10 @@
+# vLLM / HuggingFace local GPU inference.
+# Install in addition to requirements.txt, or use envs/vllm.yml.
+#
+# Requires CUDA-capable GPU(s). Set VLLM_TENSOR_PARALLEL_SIZE to the number
+# of GPUs if using multi-GPU tensor parallelism.
+
+torch>=2.1.0
+transformers>=4.40.0
+accelerate>=0.27.0
+vllm>=0.4.0

@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, StrictStr, ValidationError, conint
 
-from call_llm import query_llm
+from llm_backend import query_llm, get_token_usage, reset_token_usage
 
 
 # ============================================================
@@ -110,17 +110,23 @@ def _validate_and_check_entities(
     input_entities = {e["entity"] for e in entities}
     output_entities = {e.entity for e in validated.scored_entities}
 
-    if input_entities != output_entities:
+    missing = input_entities - output_entities
+    extra = output_entities - input_entities
+
+    if missing:
         raise ValueError(
             "Mismatch between input and output entities.\n"
-            f"Missing: {sorted(input_entities - output_entities)}\n"
-            f"Extra: {sorted(output_entities - input_entities)}"
+            f"Missing: {sorted(missing)}\n"
+            f"Extra: {sorted(extra)}"
         )
+
+    if extra:
+        print(f"[WARNING] Significance output has extra entities (will be dropped): {sorted(extra)}")
 
     seen: set = set()
     dedup: List[ScoredEntity] = []
     for se in validated.scored_entities:
-        if se.entity not in seen:
+        if se.entity in input_entities and se.entity not in seen:
             seen.add(se.entity)
             dedup.append(se)
     return ClinicalSignificanceOutput(scored_entities=dedup)
@@ -207,6 +213,9 @@ def validate_significance_with_one_repair(
             max_tokens=max_tokens,
             temperature=temperature,
         )
+        print(get_token_usage())
+        reset_token_usage()
+
         try:
             validated2 = _validate_and_check_entities(entities=entities, parsed=parse_json_from_raw(repaired_raw))
             return validated2.model_dump()
@@ -220,7 +229,7 @@ def run_clinical_significance_workflow(
     prompt_yaml_path: str,
     model_name: Optional[str] = None,
     token_path: str = "",
-    max_tokens: int = 2000,
+    max_tokens: int = 1000,
     temperature: float = 0.1,
 ) -> Dict[str, Any]:
     system_prompt = _load_prompt_yaml(prompt_yaml_path).prompt
@@ -233,6 +242,8 @@ def run_clinical_significance_workflow(
         max_tokens=max_tokens,
         temperature=temperature,
     )
+    print(get_token_usage())
+    reset_token_usage()
 
     if not isinstance(raw_output, str):
         raise TypeError(f"Query_llm must return str, got {type(raw_output)}")

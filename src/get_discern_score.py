@@ -90,12 +90,12 @@ def compute_counts(findings):
 
 
 DIAGNOSIS_PENALTY = {
-    "partial":    1,
-    "discordant": 1,
+    "partial":    2,
+    "discordant": 5,
 }
 
 ATTRIBUTE_PENALTY = {
-    "discordant":      1,
+    "discordant":      2,
     "partial":         1,
     "candidate-misses":1,
     "candidate-adds":  1,
@@ -103,20 +103,20 @@ ATTRIBUTE_PENALTY = {
 
 
 def compute_entity_penalty(f: dict) -> float:
-    raw_penalty = 0.0
-    diagnosis_concordance = f.get("diagnosis_concordance")
-    raw_penalty += DIAGNOSIS_PENALTY.get(diagnosis_concordance, 0)
-    location_concordance = f.get("location_concordance")
-    raw_penalty += ATTRIBUTE_PENALTY.get(location_concordance, 0)
-    severity_concordance = f.get("severity_concordance")
-    raw_penalty += ATTRIBUTE_PENALTY.get(severity_concordance, 0)
-    temporal_comparison = f.get("temporal_comparison")
-    raw_penalty += ATTRIBUTE_PENALTY.get(temporal_comparison, 0)
+    raw_penalty = 1.0
+    # diagnosis_concordance = f.get("diagnosis_concordance")
+    # raw_penalty += DIAGNOSIS_PENALTY.get(diagnosis_concordance, 0)
+    # location_concordance = f.get("location_concordance")
+    # raw_penalty += ATTRIBUTE_PENALTY.get(location_concordance, 0)
+    # severity_concordance = f.get("severity_concordance")
+    # raw_penalty += ATTRIBUTE_PENALTY.get(severity_concordance, 0)
+    # temporal_comparison = f.get("temporal_comparison")
+    # raw_penalty += ATTRIBUTE_PENALTY.get(temporal_comparison, 0)
     significance = float(f.get("significance_score", 0))
     return significance * raw_penalty
 
 
-def compute_discern_score(findings: list) -> float:
+def compute_reads_score(findings: list) -> float:
     if not findings:
         return 0.0
     total_penalty = sum(compute_entity_penalty(f) for f in findings)
@@ -134,7 +134,7 @@ def process_csv(input_path, findings_column, output_path=None):
     count_rows = parsed.apply(compute_counts)
     count_df   = pd.DataFrame(count_rows.tolist())
 
-    df["discern_score"] = parsed.apply(compute_discern_score)
+    df["reads_score"] = parsed.apply(compute_reads_score)
     df = pd.concat([df, count_df], axis=1)
     df.to_csv(output_path, index=False)
     print(f"Saved processed file to: {output_path}")
@@ -142,8 +142,8 @@ def process_csv(input_path, findings_column, output_path=None):
 
 
 def process_directory(directory, findings_column):
-
-    pattern = os.path.join(directory, "*.csv")
+    """Find all rexval_reads_evaluation_*.csv files in directory and process each."""
+    pattern = os.path.join(directory, "rexval_reads_evaluation_*.csv")
     input_files = glob.glob(pattern)
 
     # Exclude already-processed files
@@ -162,7 +162,7 @@ def process_directory(directory, findings_column):
         print(f"Processing: {filename}")
         try:
             df = process_csv(input_path, findings_column, output_path)
-            print(df[["discern_score"]].describe())
+            print(df[["reads_score"]].describe())
             all_results[filename] = df
         except Exception as e:
             print(f"  ERROR processing {filename}: {e}")
@@ -175,17 +175,18 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Process *.csv files in a directory."
+        description="Process rexval_reads_evaluation_*.csv files in a directory."
     )
     parser.add_argument(
         "directory",
         nargs="?",
-        help="*.csv files",
+        default="data/rexval",
+        help="Directory containing rexval_reads_evaluation_*.csv files",
     )
     parser.add_argument(
         "--findings-column",
-        default="discern_eval",
-        help="Name of the column containing findings (default: discern_eval)",
+        default="reads_eval",
+        help="Name of the column containing findings (default: reads_eval)",
     )
     args = parser.parse_args()
 

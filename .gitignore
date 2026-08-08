@@ -1,0 +1,38 @@
+# User credentials — NEVER commit these
+config.yaml
+config/.hftoken
+config/.databricks.token
+config/.openai_api.token
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor
+.DS_Store
+*.swp
+*.swo
+
+# SLURM logs
+logs/
+slurm-*.out
+jobs/*.out
+jobs/*.err
+
+# Data (download separately via PhysioNet)
+data/rexval/*.csv
+data/radevalx/*.csv
+data/discern_runs/
+data/robustness/
+data/*.json
+
+# Test cache
+.pytest_cache/

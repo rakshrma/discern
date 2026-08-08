@@ -1,0 +1,17 @@
+model,dataset,mode,n_total,bleu,rouge,meteor,bertscore,radgraph,green,crimson,discern_score,mini_discern_score
+qwen35-0_8b,chexpert_plus_valid,nothinking,200,0.1773,0.2516,0.2095,0.8584,0.1688,0.2764,-0.0745,11.785,4.455
+qwen35-2b,chexpert_plus_valid,nothinking,200,0.1855,0.2567,0.2205,0.8608,0.1909,0.318,0.0343,10.725,3.805
+qwen35-4b,chexpert_plus_valid,nothinking,200,0.1885,0.2651,0.2449,0.8632,0.192,0.3602,0.0369,10.355,3.635
+qwen35-9b,chexpert_plus_valid,nothinking,200,0.1809,0.2551,0.2306,0.8613,0.1857,0.3589,0.0999,10.24,3.785
+qwen35-27b,chexpert_plus_valid,nothinking,200,0.1841,0.2609,0.2426,0.8599,0.1948,0.3928,0.1248,9.845,3.405
+qwen35-35b-a3b,chexpert_plus_valid,nothinking,200,0.1891,0.263,0.2248,0.8622,0.1963,0.3298,0.1113,9.505,3.39
+qwen35-122b-a10b,chexpert_plus_valid,nothinking,200,0.1931,0.2737,0.2434,0.8631,0.1959,0.3606,0.1279,9.57,3.675
+qwen35-397b-a17b,chexpert_plus_valid,nothinking,200,0.1873,0.2629,0.2223,0.8628,0.1921,0.3378,0.0917,9.78,3.695
+qwen35-0_8b,mimic_cxr_test,nothinking,3131,0.2226,0.2825,0.2346,0.8646,0.1835,0.2945,-0.0561,13.2724,4.9607
+qwen35-2b,mimic_cxr_test,nothinking,3131,0.2287,0.2864,0.2468,0.8654,0.1949,0.3124,0.0085,12.8697,4.8432
+qwen35-4b,mimic_cxr_test,nothinking,3131,0.2287,0.2902,0.2601,0.8677,0.2005,0.3539,0.0521,11.7394,4.3938
+qwen35-9b,mimic_cxr_test,nothinking,3131,0.2209,0.2794,0.2486,0.8664,0.1957,0.3515,0.0728,11.5998,4.4484
+qwen35-27b,mimic_cxr_test,nothinking,3031,0.2282,0.2925,0.2691,0.866,0.2049,0.3685,0.0953,11.2738,4.1795
+qwen35-35b-a3b,mimic_cxr_test,nothinking,3031,0.2409,0.3049,0.2613,0.8699,0.2086,0.3543,0.1117,10.9188,4.0874
+qwen35-122b-a10b,mimic_cxr_test,nothinking,3031,0.2363,0.2998,0.2656,0.8691,0.2108,0.3679,0.1032,11.0403,4.0729
+qwen35-397b-a17b,mimic_cxr_test,nothinking,3031,0.2396,0.3,0.264,0.8698,0.2096,0.3496,0.0932,11.5533,4.3613

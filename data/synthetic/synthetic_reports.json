@@ -1,0 +1,90 @@
+{
+  "_metadata": {
+    "description": "Synthetic chest radiograph report pairs for DISCERN/mini-DISCERN smoke-testing in vLLM batch mode.",
+    "n_pairs": 12,
+    "categories": [
+      "concordant (3)",
+      "severity / laterality mismatch (3)",
+      "missed finding — false negative (3)",
+      "hallucinated finding — false positive (3)"
+    ],
+    "format": "compatible with scripts/run_metrics.py and scripts/run_discern.py"
+  },
+  "results": [
+    {
+      "sample_idx": 0,
+      "category": "concordant",
+      "ground_truth_raw": "PA and lateral chest radiograph. The lungs are clear. No focal consolidation, pleural effusion, or pneumothorax. Cardiac silhouette is normal in size. Mediastinum is unremarkable. IMPRESSION: No acute cardiopulmonary abnormality.",
+      "generated_raw": "PA and lateral chest radiograph. The lungs are clear bilaterally. No focal consolidation, effusion, or pneumothorax. The heart is normal in size. The mediastinum is within normal limits. IMPRESSION: No acute cardiopulmonary findings."
+    },
+    {
+      "sample_idx": 1,
+      "category": "concordant",
+      "ground_truth_raw": "Frontal chest radiograph. Heart size is normal. Lungs are well expanded and clear. No pleural effusion or pneumothorax. Osseous structures are intact. IMPRESSION: Normal chest radiograph.",
+      "generated_raw": "Frontal chest radiograph. The cardiac silhouette is normal. Lungs are clear with full expansion. No effusion or pneumothorax identified. Bones appear intact. IMPRESSION: Unremarkable chest radiograph."
+    },
+    {
+      "sample_idx": 2,
+      "category": "concordant",
+      "ground_truth_raw": "PA and lateral views. Mild cardiomegaly. Bibasilar atelectasis without focal consolidation. No pleural effusion or pneumothorax. IMPRESSION: 1) Mild cardiomegaly. 2) Bibasilar atelectasis.",
+      "generated_raw": "PA and lateral chest radiograph. The cardiac silhouette is mildly enlarged. Atelectatic changes are noted at both lung bases without focal airspace disease. No pleural effusion or pneumothorax. IMPRESSION: Mild cardiomegaly with bibasilar atelectasis."
+    },
+
+    {
+      "sample_idx": 3,
+      "category": "severity_mismatch",
+      "ground_truth_raw": "PA and lateral chest radiograph. There is a moderate left pleural effusion with associated left lower lobe atelectasis. The right lung is clear. The cardiac silhouette is mildly enlarged. No pneumothorax. IMPRESSION: Moderate left pleural effusion with left lower lobe atelectasis. Mild cardiomegaly.",
+      "generated_raw": "PA and lateral chest radiograph. There is a small left pleural effusion. No consolidation or pneumothorax identified. The cardiac silhouette is normal in size. The mediastinum is unremarkable. IMPRESSION: Small left pleural effusion."
+    },
+    {
+      "sample_idx": 4,
+      "category": "laterality_mismatch",
+      "ground_truth_raw": "Frontal chest radiograph. Dense consolidation in the right lower lobe consistent with pneumonia. The left lung is clear. No pleural effusion. Heart size is normal. IMPRESSION: Right lower lobe pneumonia.",
+      "generated_raw": "Frontal chest radiograph. Dense consolidation in the left lower lobe consistent with pneumonia. The right lung is clear. No pleural effusion. Heart size is normal. IMPRESSION: Left lower lobe pneumonia."
+    },
+    {
+      "sample_idx": 5,
+      "category": "severity_mismatch",
+      "ground_truth_raw": "Portable AP chest radiograph. Severe pulmonary edema with bilateral diffuse airspace opacities. Marked cardiomegaly. Small bilateral pleural effusions. No pneumothorax. IMPRESSION: Severe pulmonary edema with cardiomegaly and bilateral pleural effusions.",
+      "generated_raw": "Portable AP chest radiograph. Mild interstitial prominence may suggest early pulmonary edema. The heart is mildly enlarged. No pleural effusion or pneumothorax. IMPRESSION: Mild interstitial edema with mild cardiomegaly."
+    },
+
+    {
+      "sample_idx": 6,
+      "category": "missed_finding",
+      "ground_truth_raw": "Frontal and lateral chest radiograph. There is dense consolidation in the right lower lobe consistent with pneumonia. No pleural effusion or pneumothorax. The heart size is normal. IMPRESSION: Right lower lobe pneumonia.",
+      "generated_raw": "Frontal and lateral chest radiograph. The lungs are clear bilaterally. No pleural effusion or pneumothorax. Cardiac and mediastinal contours are unremarkable. IMPRESSION: Normal chest radiograph."
+    },
+    {
+      "sample_idx": 7,
+      "category": "missed_finding",
+      "ground_truth_raw": "Portable AP chest radiograph. There is a small right apical pneumothorax. The remainder of the lungs are clear. No pleural effusion. Heart size is normal. IMPRESSION: Small right apical pneumothorax.",
+      "generated_raw": "Portable AP chest radiograph. The lungs are clear. No focal consolidation or pleural effusion. The cardiac silhouette is normal. IMPRESSION: No acute cardiopulmonary abnormality."
+    },
+    {
+      "sample_idx": 8,
+      "category": "missed_finding",
+      "ground_truth_raw": "PA and lateral chest radiograph. A 2.5 cm spiculated nodule is identified in the right upper lobe, suspicious for malignancy. No pleural effusion or pneumothorax. Heart size is normal. IMPRESSION: 2.5 cm spiculated right upper lobe nodule, highly suspicious for malignancy. Recommend chest CT.",
+      "generated_raw": "PA and lateral chest radiograph. The lungs appear clear. No pleural effusion or pneumothorax. Heart and mediastinum are unremarkable. IMPRESSION: No acute cardiopulmonary findings."
+    },
+
+    {
+      "sample_idx": 9,
+      "category": "hallucinated_finding",
+      "ground_truth_raw": "Frontal chest radiograph. The lungs are clear. No pleural effusion or pneumothorax. Cardiac silhouette is normal. IMPRESSION: Normal chest radiograph.",
+      "generated_raw": "Frontal chest radiograph. There is a 2 cm right upper lobe nodule which is suspicious for malignancy. No pleural effusion. Cardiac silhouette is normal. IMPRESSION: Right upper lobe nodule, recommend CT for further characterization."
+    },
+    {
+      "sample_idx": 10,
+      "category": "hallucinated_finding",
+      "ground_truth_raw": "PA and lateral chest radiograph. The lungs are clear. The cardiac silhouette is normal in size. No pleural effusion or pneumothorax. IMPRESSION: Normal chest radiograph.",
+      "generated_raw": "PA and lateral chest radiograph. There is patchy consolidation in the left lower lobe consistent with pneumonia. No pleural effusion or pneumothorax. The heart size is normal. IMPRESSION: Left lower lobe pneumonia."
+    },
+    {
+      "sample_idx": 11,
+      "category": "hallucinated_finding",
+      "ground_truth_raw": "Frontal chest radiograph. Lungs are clear. Heart size is normal. No effusion or pneumothorax. IMPRESSION: Normal chest radiograph.",
+      "generated_raw": "Frontal chest radiograph. There is a moderate right pleural effusion. The heart is enlarged with vascular congestion suggestive of congestive heart failure. No pneumothorax. IMPRESSION: 1) Moderate right pleural effusion. 2) Cardiomegaly with findings concerning for congestive heart failure."
+    }
+  ]
+}

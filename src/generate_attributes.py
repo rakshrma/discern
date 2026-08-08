@@ -7,9 +7,9 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, field_validator
 
-from call_llm import query_llm
+from llm_backend import query_llm, get_token_usage, reset_token_usage
 
 # -------------------------
 # Schemas
@@ -41,6 +41,21 @@ class CompareRow(BaseModel):
     location_concordance: Conc
     severity_concordance: Conc
     temporal_comparison: Temp
+
+    @field_validator("diagnosis_concordance", mode="before")
+    @classmethod
+    def _default_diag(cls, v: Any) -> Any:
+        return v if v else "concordant"
+
+    @field_validator("location_concordance", "severity_concordance", mode="before")
+    @classmethod
+    def _default_conc(cls, v: Any) -> Any:
+        return v if v else "not mentioned"
+
+    @field_validator("temporal_comparison", mode="before")
+    @classmethod
+    def _default_temp(cls, v: Any) -> Any:
+        return v if v else "not mentioned"
 
 
 _COMPARE_ROW_SCHEMA = CompareRow.model_json_schema()
@@ -197,6 +212,8 @@ def validate_with_one_repair(
                 raw_response=raw_response,
             ),
         )
+        get_token_usage()
+        reset_token_usage()
         return validate_rows(entities_intersection, extract_first_json_array(repaired))
 
 
@@ -210,8 +227,8 @@ def run_compare_workflow(
     candidate_entities: Union[str, List[str]],
     ground_truth_entities: Union[str, List[str]],
     model_name: str,
-    db_token: str,
-    token_size: int = 5000,
+    token_path: str,
+    token_size: int = 2000,
     temperature: float = 0.0,
 ) -> List[dict]:
     template = load_prompt(prompt_path)
@@ -225,12 +242,14 @@ def run_compare_workflow(
 
     messages = render_prompt(template, ground_truth_report.strip(), candidate_report.strip(), entities_intersection)
 
-    raw = query_llm(model=model_name, token_path=db_token, max_tokens=token_size, messages=messages, temperature=temperature)
+    raw = query_llm(model=model_name, token_path=token_path, max_tokens=token_size, messages=messages, temperature=temperature)
+    get_token_usage()
+    reset_token_usage()
 
     return validate_with_one_repair(
         entities_intersection=entities_intersection,
         raw_response=raw,
         model_name=model_name,
-        token_path=db_token,
+        token_path=token_path,
         token_size=token_size,
     )

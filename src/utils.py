@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-Presence = Literal["POSITIVE", "NEGATIVE"]
+Presence = Literal["POSITIVE", "NEGATIVE", "UNCERTAIN"]
 
 
 def _norm_entity(s: str) -> str:

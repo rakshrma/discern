@@ -1,0 +1,14 @@
+# GREEN metric dependencies.
+#
+# GREEN requires a specific version of transformers that conflicts with
+# vLLM + Gemma-4. Use a dedicated conda environment:
+#
+#   conda env create -f envs/green.yml
+#   conda activate green
+#   pip install -e /path/to/discern
+#
+# Then set conda_envs.green in config.yaml to:
+#   /path/to/conda/envs/green/bin/python
+
+# Install GREEN from GitHub (not on PyPI):
+#   pip install git+https://github.com/Stanford-AIMI/GREEN.git

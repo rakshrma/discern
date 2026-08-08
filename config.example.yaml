@@ -1,0 +1,103 @@
+# =============================================================================
+# DISCERN — Configuration File
+# =============================================================================
+# Copy this file to config.yaml and fill in your credentials.
+#
+#   cp config.example.yaml config.yaml
+#
+# config.yaml is in .gitignore — your secrets will NOT be committed.
+# =============================================================================
+
+# ── DISCERN backbone ──────────────────────────────────────────────────────────
+# The LLM used for all DISCERN evaluation stages.
+#
+# Backend options:
+#   databricks — Databricks model serving endpoint (recommended for API access)
+#   hf         — HuggingFace local inference via vLLM (GPU required)
+#
+# The backend is auto-detected from the model name:
+#   Models starting with "databricks-" → Databricks API
+#   All other model names              → HuggingFace / vLLM
+#
+discern:
+  default_model: databricks-claude-sonnet-4-6
+  mode: sequential              # sequential | batch (auto-selected based on backend)
+  max_concurrent: 3             # parallel requests (Databricks API only)
+  max_tokens: 5000              # initial max tokens per LLM call
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+# Fill in only the keys you need. Unused keys can stay empty ("").
+#
+credentials:
+  # Databricks — https://docs.databricks.com/dev-tools/api/latest/authentication.html
+  databricks_token: ""          # Personal Access Token (PAT)
+  databricks_host: ""           # e.g. https://adb-XXXXXXXXXXXXXXXX.N.azuredatabricks.net
+
+  # HuggingFace — https://huggingface.co/settings/tokens (needed for gated models)
+  hf_token: ""
+
+  # Optional alternatives (not needed if using Databricks or HF)
+  anthropic_api_key: ""
+  openai_api_key: ""
+
+# ── vLLM settings (used when model is a HuggingFace path) ────────────────────
+# These set environment variables for vLLM at startup.
+#
+vllm:
+  tensor_parallel_size: 1       # Number of GPUs for tensor parallelism
+  gpu_memory_utilization: 0.90  # Fraction of GPU memory to use
+  max_model_len: 8192           # Maximum context window length
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+# Enable or disable individual metrics.
+# Metrics requiring unavailable checkpoints or separate envs are auto-skipped.
+#
+metrics:
+  # Lexical / embedding (no checkpoints needed)
+  bleu: true
+  rouge: true
+  meteor: true
+  bertscore: true               # downloads distilroberta-base on first run
+
+  # Radiology-specific (checkpoint required — set checkpoints.radgraph_path below)
+  radgraph: false
+
+  # Model-based (separate conda envs required — set conda_envs.* below)
+  green: false                  # use envs/green.yml; GPU recommended
+  crimson: false                # use envs/crimson.yml; GPU required
+
+  # LLM-based (uses discern.default_model and credentials above)
+  discern: true
+  mini_discern: true
+
+# ── Checkpoints ───────────────────────────────────────────────────────────────
+# Required only for RadGraph, GREEN, and CRIMSON.
+#
+checkpoints:
+  # RadGraph: download from PhysioNet (requires credentialed access)
+  # Set to the directory containing model_checkpoint/
+  radgraph_path: ""
+
+  # GREEN: HuggingFace model name (downloaded automatically on first run)
+  green_model: StanfordAIMI/GREEN-radllama2-7b
+
+  # CRIMSON: HuggingFace model name
+  crimson_model: rajpurkarlab/medgemma-4b-it-crimson
+
+# ── Isolated conda environments ───────────────────────────────────────────────
+# GREEN and CRIMSON require dependencies that conflict with the main DISCERN env.
+# Set the path to the Python binary in each dedicated conda environment.
+# Leave empty ("") to attempt direct import (only works if no env conflicts).
+#
+# Example:
+#   green: /home/user/.conda/envs/green/bin/python
+#   crimson: /home/user/.conda/envs/crimson/bin/python
+#
+conda_envs:
+  green: ""
+  crimson: ""
+
+# ── Output ────────────────────────────────────────────────────────────────────
+output:
+  save_intermediate: true       # Save JSON after each completed row (for resume support)
+  indent: 2

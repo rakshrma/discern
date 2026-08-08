@@ -1,0 +1,30 @@
+name: crimson
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    # CRIMSON requires cutting-edge versions incompatible with the main env
+    - transformers>=5.3.0
+    - torch>=2.10.0
+    - peft>=0.18.1
+    - accelerate>=1.13.0
+    - openai>=2.26.0
+    - pandas>=2.0.0
+    - numpy>=1.23.0
+    - scipy>=1.10.0
+    - tqdm>=4.60.0
+    - pyyaml>=6.0.0
+    - pydantic>=2.0.0
+    - sentence-transformers>=3.0.0
+    - scikit-learn>=1.1.0
+    - Pillow>=10.0.0
+
+    # Install CRIMSON from its repo:
+    # pip install -e /path/to/CRIMSON
+    #
+    # After creating this env, set in config.yaml:
+    # conda_envs:
+    #   crimson: /path/to/conda/envs/crimson/bin/python

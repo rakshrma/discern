@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import yaml
 from pydantic import BaseModel, ConfigDict, RootModel, StrictStr
 
-from call_llm import query_llm
+from llm_backend import query_llm, get_token_usage, reset_token_usage
 
 
 # -------------------------
@@ -146,7 +146,20 @@ def build_repair_messages(
 # -------------------------
 # Post-parse validation (keep-first + filter invalid)
 # -------------------------
+def _build_entity_part_index(allowed_entities: Set[str]) -> Dict[str, str]:
+    """Map the entity-name part (after ' :: ') to the canonical 'Cat :: Ent' string.
+    Used to recover when the model omits the category prefix or uses the wrong one."""
+    index: Dict[str, str] = {}
+    for ae in allowed_entities:
+        # entity part is everything after the last ' :: '
+        entity_part = ae.split(" :: ", 1)[-1].strip()
+        if entity_part not in index:
+            index[entity_part] = ae
+    return index
+
+
 def validate_entities(out_list: List[Dict[str, Any]], allowed_entities: Set[str]) -> List[Dict[str, Any]]:
+    entity_part_index = _build_entity_part_index(allowed_entities)
     seen: Set[str] = set()
     cleaned: List[Dict[str, Any]] = []
 
@@ -156,8 +169,18 @@ def validate_entities(out_list: List[Dict[str, Any]], allowed_entities: Set[str]
             print(f"[ERROR] Missing 'entity' key at index {i}. Skipping.")
             continue
         if ent not in allowed_entities:
-            print(f"[ERROR] Invalid entity at index {i}: {ent}. Skipping.")
-            continue
+            # Fallback: match by entity-name part only (strips any category prefix).
+            # This recovers from the model returning "Lung Volume" instead of
+            # "Anatomical :: Lung Volume", or using a wrong category prefix.
+            ent_part = ent.split(" :: ", 1)[-1].strip()
+            canonical = entity_part_index.get(ent_part)
+            if canonical:
+                print(f"[WARNING] Normalizing entity '{ent}' → '{canonical}' at index {i}.")
+                row = {**row, "entity": canonical}
+                ent = canonical
+            else:
+                print(f"[ERROR] Invalid entity at index {i}: {ent}. Skipping.")
+                continue
         if ent in seen:
             print(f"[WARNING] Duplicate entity at index {i}: {ent}. Keeping first occurrence.")
             continue
@@ -176,8 +199,16 @@ def _call_parse_validate(
     model: str,
     token_path: str,
     allowed_entities: Set[str],
+    max_tokens: int = 2000,
 ) -> Tuple[List[Dict[str, Any]], str]:
-    raw = query_llm(messages=msgs, model=model, token_path=token_path, max_tokens=5000)
+    raw = query_llm(messages=msgs, model=model, token_path=token_path, max_tokens=max_tokens)
+
+    print(get_token_usage())
+    # {'prompt_tokens': 154, 'completion_tokens': 312, 'total_tokens': 466}
+
+    # reset when starting a new experiment
+    reset_token_usage()
+
     if not isinstance(raw, str):
         raise TypeError(f"query_llm must return str, got {type(raw)}")
 
@@ -199,6 +230,7 @@ def run_entity_extraction(
     report_text: str,
     require_all_entities: bool = False,
     enable_repair: bool = True,
+    max_tokens: int = 2000,
 ) -> List[Dict[str, Any]]:
     ExtractionRequest.model_validate(
         {"report_text": report_text, "prompt_yaml_path": prompt_yaml_path, "entities_yaml_path": entities_yaml_path}
@@ -215,7 +247,7 @@ def run_entity_extraction(
 
     raw = ""
     try:
-        out, raw = _call_parse_validate(messages, model=model, token_path=token_path, allowed_entities=allowed_entities)
+        out, raw = _call_parse_validate(messages, model=model, token_path=token_path, allowed_entities=allowed_entities, max_tokens=max_tokens)
         return out
     except Exception as e:
         if not enable_repair:
@@ -228,7 +260,7 @@ def run_entity_extraction(
             error_msg=str(e),
         )
         try:
-            out2, _ = _call_parse_validate(repair_messages, model=model, token_path=token_path, allowed_entities=allowed_entities)
+            out2, _ = _call_parse_validate(repair_messages, model=model, token_path=token_path, allowed_entities=allowed_entities, max_tokens=max_tokens)
             return out2
         except Exception as repair_exc:
             raise RuntimeError(f"Repair attempt also failed: {repair_exc!r}")
