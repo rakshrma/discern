@@ -9,97 +9,95 @@
 # =============================================================================
 
 # ── DISCERN backbone ──────────────────────────────────────────────────────────
-# The LLM used for all DISCERN evaluation stages (entity extraction, attribute
-# comparison, significance scoring).
+# The LLM used for all DISCERN evaluation stages.
 #
-# backend options:
-#   openrouter   — https://openrouter.ai  (recommended for open-source models)
-#   anthropic    — Direct Anthropic API (Claude models)
-#   openai       — Direct OpenAI API
-#   databricks   — Databricks model serving endpoint
-#   hf           — HuggingFace local inference (uses vLLM by default)
+# Backend options:
+#   databricks — Databricks model serving endpoint (recommended for API access)
+#   hf         — HuggingFace local inference via vLLM (GPU required)
+#
+# The backend is auto-detected from the model name:
+#   Models starting with "databricks-" → Databricks API
+#   All other model names              → HuggingFace / vLLM
 #
 discern:
-  default_backend: openrouter
-  default_model: google/gemma-3-27b-it     # gemma4-31b-it via openrouter
-  mode: batch                               # batch (default) | sequential
-  max_concurrent: 4                         # parallel requests in batch mode
-  max_tokens: 5000                          # default max tokens per LLM call
+  default_model: databricks-claude-sonnet-4-6
+  mode: sequential              # sequential | batch (auto-selected based on backend)
+  max_concurrent: 3             # parallel requests (Databricks API only)
+  max_tokens: 5000              # initial max tokens per LLM call
 
 # ── Credentials ──────────────────────────────────────────────────────────────
 # Fill in only the keys you need. Unused keys can stay empty ("").
 #
 credentials:
-  anthropic_api_key: ""          # Anthropic / Claude  →  https://console.anthropic.com
-  openai_api_key: ""             # OpenAI              →  https://platform.openai.com
-  openrouter_api_key: ""         # OpenRouter          →  https://openrouter.ai/keys
-  databricks_token: ""           # Databricks PAT      →  Databricks workspace → Settings → Tokens
-  databricks_host: ""            # e.g. https://adb-XXXXXXXX.azuredatabricks.net
-  hf_token: ""                   # HuggingFace         →  https://huggingface.co/settings/tokens
+  # Databricks — https://docs.databricks.com/dev-tools/api/latest/authentication.html
+  databricks_token: ""          # Personal Access Token (PAT)
+  databricks_host: ""           # e.g. https://adb-XXXXXXXXXXXXXXXX.N.azuredatabricks.net
 
-# ── Model checkpoints (model-based metrics) ───────────────────────────────────
-# Required only for SembScore and RadGraph metrics.
-# See README.md §Checkpoints for download instructions.
+  # HuggingFace — https://huggingface.co/settings/tokens (needed for gated models)
+  hf_token: ""
+
+  # Optional alternatives (not needed if using Databricks or HF)
+  anthropic_api_key: ""
+  openai_api_key: ""
+
+# ── vLLM settings (used when model is a HuggingFace path) ────────────────────
+# These set environment variables for vLLM at startup.
 #
-checkpoints:
-  # CheXbert: download from https://stanfordmedicine.box.com/s/...
-  # Set to the directory containing chexbert.pth
-  chexbert_path: ""
-
-  # RadGraph: download from PhysioNet (requires credentialed access)
-  # Set to the directory containing model_checkpoint/
-  radgraph_path: ""
-
-  # CXR-Report-Metric: required for RadCliQ-v1 (contains radcliq-v1.pkl)
-  # git clone https://github.com/rajpurkarlab/CXR-Report-Metric
-  cxr_metric_path: ""        # e.g. /path/to/CXR-Report-Metric
-
-  # GREEN: HuggingFace model name (downloaded automatically on first run)
-  green_model: StanfordAIMI/GREEN-radllama2-7b
-
-  # CRIMSON: HuggingFace model name (used in the separate crimson conda env)
-  crimson_model: rajpurkarlab/medgemma-4b-it-crimson
+vllm:
+  tensor_parallel_size: 1       # Number of GPUs for tensor parallelism
+  gpu_memory_utilization: 0.90  # Fraction of GPU memory to use
+  max_model_len: 8192           # Maximum context window length
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
-# Enable or disable individual metrics in run_metrics.py.
-# Metrics requiring unavailable checkpoints/envs are auto-skipped with a warning.
+# Enable or disable individual metrics.
+# Metrics requiring unavailable checkpoints or separate envs are auto-skipped.
 #
 metrics:
   # Lexical / embedding (no checkpoints needed)
   bleu: true
   rouge: true
   meteor: true
-  bertscore: true           # downloads distilroberta-base on first run
+  bertscore: true               # downloads distilroberta-base on first run
 
-  # Radiology-specific (checkpoint required)
-  semb_score: false         # requires checkpoints.chexbert_path
-  radgraph: false           # requires checkpoints.radgraph_path
-  radcliq: false            # requires bleu + bertscore + semb_score + radgraph
+  # Radiology-specific (checkpoint required — set checkpoints.radgraph_path below)
+  radgraph: false
 
-  # Model-based (auto-download from HuggingFace)
-  ratescore: true           # pip install RaTEScore
-  green: false              # GPU recommended; pip install green_score
-  bluert: false             # pip install bleurt
+  # Model-based (separate conda envs required — set conda_envs.* below)
+  green: false                  # use envs/green.yml; GPU recommended
+  crimson: false                # use envs/crimson.yml; GPU required
 
-  # Separate conda env required
-  crimson: false            # run in 'crimson' conda env (see envs/crimson.yml)
-
-  # LLM API-based
-  fineradscor: false        # requires openai_api_key or anthropic_api_key
-
-  # DISCERN (LLM backbone configured above)
+  # LLM-based (uses discern.default_model and credentials above)
   discern: true
   mini_discern: true
 
-# ── vLLM settings (used when backend: hf) ────────────────────────────────────
-vllm:
-  use_vllm: true                 # set false to fall back to raw transformers pipeline
-  tensor_parallel_size: 1        # increase for multi-GPU (e.g. 2 for 2-GPU nodes)
-  gpu_memory_utilization: 0.85
-  max_model_len: 8192
+# ── Checkpoints ───────────────────────────────────────────────────────────────
+# Required only for RadGraph, GREEN, and CRIMSON.
+#
+checkpoints:
+  # RadGraph: download from PhysioNet (requires credentialed access)
+  # Set to the directory containing model_checkpoint/
+  radgraph_path: ""
+
+  # GREEN: HuggingFace model name (downloaded automatically on first run)
+  green_model: StanfordAIMI/GREEN-radllama2-7b
+
+  # CRIMSON: HuggingFace model name
+  crimson_model: rajpurkarlab/medgemma-4b-it-crimson
+
+# ── Isolated conda environments ───────────────────────────────────────────────
+# GREEN and CRIMSON require dependencies that conflict with the main DISCERN env.
+# Set the path to the Python binary in each dedicated conda environment.
+# Leave empty ("") to attempt direct import (only works if no env conflicts).
+#
+# Example:
+#   green: /home/user/.conda/envs/green/bin/python
+#   crimson: /home/user/.conda/envs/crimson/bin/python
+#
+conda_envs:
+  green: ""
+  crimson: ""
 
 # ── Output ────────────────────────────────────────────────────────────────────
 output:
-  save_intermediate: true        # save JSON after each completed row (resume-safe)
-  include_metadata: true         # embed _metadata block in every output JSON
+  save_intermediate: true       # Save JSON after each completed row (for resume support)
   indent: 2

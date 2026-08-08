@@ -1,37 +1,29 @@
-# =============================================================================
-# DISCERN — Requirements
-# =============================================================================
-# Core pipeline (required for DISCERN evaluation)
-# =============================================================================
-pandas>=1.5.0
-pydantic>=2.0.0
-PyYAML>=6.0
+# Core DISCERN requirements — API-based evaluation, no GPU needed.
+# For local GPU inference (vLLM), also install: requirements-vllm.txt
+# For GREEN metric:  requirements-green.txt
+# For CRIMSON metric: requirements-crimson.txt
+
+# LLM API clients
 openai>=1.0.0
 anthropic>=0.25.0
-torch>=2.0.0
-transformers>=4.40.0
-accelerate>=0.27.0
 
-# =============================================================================
-# NLP metrics
-# =============================================================================
+# Data / config
+pydantic>=2.0.0
+PyYAML>=6.0
+pandas>=1.5.0
 numpy>=1.23.0
 scipy>=1.10.0
+tqdm>=4.60.0
+
+# NLP metrics
 nltk>=3.8.0
 rouge>=1.0.0
 bert-score>=0.3.13
-matplotlib>=3.6.0
-seaborn>=0.12.0
-tqdm>=4.60.0
-scikit-learn>=1.1.0
-openpyxl>=3.0.0
+evaluate>=0.4.0
 
-# =============================================================================
-# Radiology-specific metrics (install individually as needed)
-# =============================================================================
-# RaTEScore:  pip install RaTEScore
-# RadGraph:   pip install radgraph         (requires PhysioNet checkpoint)
-# GREEN:      pip install git+https://github.com/Stanford-AIMI/GREEN.git
-# BLEURT:     pip install bleurt           (optional)
-# CRIMSON:    install from source in separate 'crimson' conda env (see envs/crimson.yml)
-# vLLM:       pip install vllm             (for HF backend; see envs/vllm.yml)
+# Radiology-specific
+radgraph                        # pip install radgraph (RadGraph F1)
+RaTEScore                       # pip install RaTEScore
+
+# Install DISCERN package itself (from repo root):
+#   pip install -e .

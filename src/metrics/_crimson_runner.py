@@ -1,83 +1,98 @@
+"""Subprocess entry point for CRIMSON scoring (run inside the crimson conda env).
+
+Uses the official CRIMSON package API:
+
+    from CRIMSON import CRIMSONScore
+    scorer = CRIMSONScore()
+    # batched (HF backend):
+    results = scorer.evaluate_batch(refs, preds, batch_size=N)
+    # per-pair (any backend):
+    r = scorer.evaluate(reference_findings=..., predicted_findings=...)
+
+The HF backend supports true batched generation via `evaluate_batch`. We chunk
+the inputs, retry each chunk up to 3× with exponential backoff, and fall back
+to per-pair `evaluate` for any chunk that still fails — same pattern as
+CRIMSON/evaluate_reports.py in the upstream repo.
+
+Note: the package import name is `CRIMSON` (uppercase) to avoid colliding with
+this repo's wrapper module at src/metrics/crimson.py (lowercase) when both
+are visible on sys.path.
 """
-Standalone subprocess runner for CRIMSON scoring.
-Called by crimson.py via `conda run -n crimson python _crimson_runner.py`.
-
-Accepts either:
-  - legacy list-of-pairs: [{"candidate": ..., "reference": ...}, ...]
-  - full _w_metrics.json: {"results": [{"generated_raw"/"generated_impression"/...,
-                                        "ground_truth_raw"/...}, ...], ...}
-
-When given the _w_metrics schema, writes crimson scores back into each
-results[i]["crimson"] and re-dumps the full JSON to --output.
-"""
-
-import argparse
 import json
 import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "CRIMSON"))
-
-
-def _pick(entry, keys):
-    for k in keys:
-        v = entry.get(k)
-        if v:
-            return v
-    return ""
+import time
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--model", default="rajpurkarlab/medgemma-4b-it-crimson")
-    parser.add_argument("--batch-size", type=int, default=4)
-    args = parser.parse_args()
+    _, input_path, output_path = sys.argv
+    with open(input_path) as f:
+        payload = json.load(f)
 
-    with open(args.input) as f:
-        data = json.load(f)
+    refs       = payload["references"]
+    cands      = payload["candidates"]
+    batch_size = max(1, int(payload.get("batch_size", 8)))
 
-    if isinstance(data, dict) and "results" in data:
-        rows = data["results"]
-        candidates = [_pick(r, ("generated_raw", "generated_impression", "generated_findings", "candidate")) for r in rows]
-        references = [_pick(r, ("ground_truth_raw", "ground_truth_impression", "ground_truth_findings", "reference")) for r in rows]
-        wrapped = True
+    from CRIMSON import CRIMSONScore
+    scorer = CRIMSONScore()
+
+    n = len(refs)
+    scores = [None] * n
+    use_batch = getattr(scorer, "api", None) in ("huggingface", "hf")
+
+    def _per_pair(start, r_chunk, c_chunk):
+        for j, (ref, cand) in enumerate(zip(r_chunk, c_chunk)):
+            try:
+                r = scorer.evaluate(reference_findings=ref, predicted_findings=cand)
+                scores[start + j] = float(r["crimson_score"])
+            except Exception as exc:
+                print(f"[CRIMSON] pair {start + j} failed: {exc}", file=sys.stderr)
+
+    if use_batch:
+        print(f"[CRIMSON] HF backend: batched inference (batch_size={batch_size})",
+              file=sys.stderr)
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            r_chunk, c_chunk = refs[start:end], cands[start:end]
+
+            chunk_result = None
+            for attempt in range(3):
+                try:
+                    chunk_result = scorer.evaluate_batch(
+                        r_chunk, c_chunk, batch_size=batch_size,
+                    )
+                    break
+                except Exception as exc:
+                    print(f"[CRIMSON] batch {start} attempt {attempt} failed: {exc}",
+                          file=sys.stderr)
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)
+
+            if chunk_result is None:
+                _per_pair(start, r_chunk, c_chunk)
+                continue
+            for j, r in enumerate(chunk_result):
+                if r is not None:
+                    try:
+                        scores[start + j] = float(r["crimson_score"])
+                    except Exception as exc:
+                        print(f"[CRIMSON] pair {start + j} parse failed: {exc}",
+                              file=sys.stderr)
+
+        # Per-pair retry for any pair that came back None (typically a JSON
+        # parse failure inside evaluate_batch). Single-pair calls give the
+        # model the full token budget and avoid batched-decoding artifacts.
+        missing = [i for i, s in enumerate(scores) if s is None]
+        if missing:
+            print(f"[CRIMSON] retrying {len(missing)} unscored pair(s) individually",
+                  file=sys.stderr)
+            for i in missing:
+                _per_pair(i, [refs[i]], [cands[i]])
     else:
-        rows = data
-        candidates = [p["candidate"] for p in rows]
-        references = [p["reference"] for p in rows]
-        wrapped = False
+        print(f"[CRIMSON] non-HF backend: per-pair scoring", file=sys.stderr)
+        _per_pair(0, refs, cands)
 
-    from CRIMSON.generate_score import CRIMSONScore
-    scorer = CRIMSONScore(model_name=args.model)
-    results_list = scorer.evaluate_batch(
-        reference_findings_list=references,
-        predicted_findings_list=candidates,
-        batch_size=args.batch_size,
-    )
-
-    def _score_of(r):
-        if r is None:
-            return None
-        if isinstance(r, dict):
-            v = r.get("crimson_score")
-            return float(v) if v is not None else None
-        try:
-            return float(r)
-        except (TypeError, ValueError):
-            return None
-
-    scores_out = [_score_of(r) for r in results_list]
-
-    if wrapped:
-        for r, s in zip(rows, scores_out):
-            r["crimson"] = s
-        with open(args.output, "w") as f:
-            json.dump(data, f, indent=2)
-    else:
-        with open(args.output, "w") as f:
-            json.dump(scores_out, f)
+    with open(output_path, "w") as f:
+        json.dump(scores, f)
 
 
 if __name__ == "__main__":

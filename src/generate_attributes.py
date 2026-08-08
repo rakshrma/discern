@@ -9,8 +9,7 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, field_validator
 
-from call_llm import query_llm, get_token_usage, reset_token_usage, LLMConfig
-from utils import extract_first_json_value
+from llm_backend import query_llm, get_token_usage, reset_token_usage
 
 # -------------------------
 # Schemas
@@ -128,10 +127,10 @@ def render_prompt(system_template: str, ref_report: str, pred_report: str, entit
 # LLM output parsing/validation + one-shot repair
 # -------------------------
 def extract_first_json_array(text: str) -> str:
-    result = extract_first_json_value(text)
-    if not result:
+    m = re.search(r"(\[\s*\{.*?\}\s*\])", text, flags=re.DOTALL)
+    if not m:
         raise ValueError("No JSON array detected in model response.")
-    return result
+    return m.group(1).strip()
 
 
 def _dedup_and_sort(rows: List[CompareRow], ordered: List[str]) -> List[CompareRow]:
@@ -196,23 +195,24 @@ def validate_with_one_repair(
     *,
     entities_intersection: List[str],
     raw_response: str,
-    cfg: LLMConfig,
+    model_name: str,
+    token_path: str,
+    token_size: int,
 ) -> List[dict]:
     try:
         return validate_rows(entities_intersection, extract_first_json_array(raw_response))
     except (ValueError, ValidationError, JSONDecodeError) as e:
         repaired = query_llm(
-            model=cfg.model,
-            token_path=cfg.token_path,
-            hf_token_path=cfg.hf_token_path,
-            max_tokens=cfg.max_tokens,
+            model=model_name,
+            token_path=token_path,
+            max_tokens=token_size,
             messages=build_repair_messages(
                 entities_intersection=entities_intersection,
                 error_msg=str(e),
                 raw_response=raw_response,
             ),
         )
-        print(get_token_usage())
+        get_token_usage()
         reset_token_usage()
         return validate_rows(entities_intersection, extract_first_json_array(repaired))
 
@@ -226,7 +226,10 @@ def run_compare_workflow(
     ground_truth_report: str,
     candidate_entities: Union[str, List[str]],
     ground_truth_entities: Union[str, List[str]],
-    cfg: LLMConfig,
+    model_name: str,
+    token_path: str,
+    token_size: int = 2000,
+    temperature: float = 0.0,
 ) -> List[dict]:
     template = load_prompt(prompt_path)
 
@@ -239,19 +242,14 @@ def run_compare_workflow(
 
     messages = render_prompt(template, ground_truth_report.strip(), candidate_report.strip(), entities_intersection)
 
-    raw = query_llm(
-        model=cfg.model,
-        token_path=cfg.token_path,
-        hf_token_path=cfg.hf_token_path,
-        max_tokens=cfg.max_tokens,
-        temperature=cfg.temperature,
-        messages=messages,
-    )
-    print(get_token_usage())
+    raw = query_llm(model=model_name, token_path=token_path, max_tokens=token_size, messages=messages, temperature=temperature)
+    get_token_usage()
     reset_token_usage()
 
     return validate_with_one_repair(
         entities_intersection=entities_intersection,
         raw_response=raw,
-        cfg=cfg,
+        model_name=model_name,
+        token_path=token_path,
+        token_size=token_size,
     )

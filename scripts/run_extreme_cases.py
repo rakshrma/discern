@@ -1,160 +1,244 @@
+#!/usr/bin/env python3
 """
-run_extreme_cases.py — Generate and score extreme/adversarial report pairs.
+build_extreme_baseline.py
+=========================
+Generate extreme-case (lower-bound) pairs for judge robustness evaluation.
 
-Extreme cases validate DISCERN score calibration:
-  concordant  — candidate = exact copy of ground truth (score should ≈ 0)
-  discordant  — LLM generates maximally wrong version (score should be high)
+For each unique ground-truth report in rexval (50) and radevalx (100), create
+three pairs:
+  - "normal"       : GT vs "Normal." (minimal single-word report)
+  - "all_negative" : GT vs a comprehensive report negating every diagnosis
+                     from the DISCERN taxonomy (diagnosis.yaml)
+  - "all_positive" : GT vs a comprehensive report asserting every diagnosis
+                     from the DISCERN taxonomy as present
+
+Output JSON is inference_all_metrics.py compatible.
+
+Total entries:
+  rexval   : 50 × 3 = 150
+  radevalx : 100 × 3 = 300
+  Grand total: 450
 
 Usage
 -----
-  python scripts/run_extreme_cases.py \\
-      --input  data/rexval/rexval_reports_long.csv \\
-      --output data/discern_runs/extreme_cases/ \\
-      --model  google/gemma-3-27b-it
+    python scripts/run_extreme_cases.py \\
+        --rexval   data/rexval/rexval_reports_long.csv \\
+        --radevalx data/radevalx/radeval_total.csv \\
+        --output   data/extreme_baseline.json
 """
-
 from __future__ import annotations
 
 import argparse
+import csv
 import json
-import sys
-import warnings
-from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Tuple
 
-_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(_ROOT / "src"))
+# ---------------------------------------------------------------------------
+# Fixed extreme-baseline reports
+# Diagnoses drawn from config/diagnosis.yaml
+# ---------------------------------------------------------------------------
 
-import yaml
+# Minimal single-word report.
+NORMAL_REPORT = "Normal."
 
-_ADVERSARIAL_PROMPT = """You are generating a deliberately WRONG radiology report for research purposes.
+# Every diagnosis from diagnosis.yaml explicitly negated.
+ALL_NEGATIVE_REPORT = (
+    # Congenital Disease
+    "No congenital lung disease. "
+    "No congenital vascular disease. "
+    "No congenital heart disease. "
+    # Infectious Pulmonary Disease
+    "No pneumonia. "
+    "No tuberculosis. "
+    "No other pulmonary infection. "
+    # Pulmonary Neoplasm
+    "No primary lung malignancy. "
+    "No pulmonary metastases. "
+    "No other pulmonary neoplasm. "
+    # Lymphoproliferative Disease
+    "No lymphoproliferative disease or mediastinal lymphadenopathy. "
+    # Other Pulmonary Diagnosis
+    "No interstitial lung disease. "
+    "No sarcoidosis. "
+    "No asbestos-related disease or pleural plaques. "
+    "No pneumoconiosis. "
+    "No pulmonary edema. "
+    "No ARDS. "
+    "No aspiration. "
+    "No iatrogenic lung disease. "
+    "No COPD or hyperinflation. "
+    "No pulmonary vasculitis. "
+    "No pulmonary hypertension. "
+    "No pulmonary thromboembolic disease. "
+    "No miscellaneous pulmonary disease. "
+    # Cardiac Disease
+    "No valvular heart disease. "
+    "No myocardial disease. "
+    "No pericardial effusion or pericardial disease. "
+    "No congestive heart failure. "
+    "No other cardiac disease. "
+    # Aortic Disease
+    "No aortic dissection or aneurysm. "
+    "No other aortic disease. "
+    # Miscellaneous
+    "No traumatic injury. "
+    "No post-treatment change. "
+    "No miscellaneous disease. "
+    "No acute cardiopulmonary abnormality."
+)
 
-Given the reference report below, write a version that:
-1. Contradicts every major finding (e.g. if pleural effusion is present → say absent)
-2. Swaps laterality (left ↔ right)
-3. Changes severity (e.g. moderate → mild, large → small)
-4. Changes temporal characterization (e.g. new → chronic, worsening → improving)
-5. Changes diagnoses to different ones
+# Every diagnosis from diagnosis.yaml explicitly asserted as present.
+ALL_POSITIVE_REPORT = (
+    # Congenital Disease
+    "Congenital lung disease with abnormal pulmonary segmentation. "
+    "Congenital vascular disease with anomalous pulmonary venous return. "
+    "Congenital heart disease with septal defect. "
+    # Infectious Pulmonary Disease
+    "Bilateral lower lobe pneumonia with dense consolidation. "
+    "Apical fibronodular opacities and cavitation consistent with tuberculosis. "
+    "Multifocal airspace opacities consistent with additional pulmonary infection. "
+    # Pulmonary Neoplasm
+    "Right upper lobe spiculated mass consistent with primary lung malignancy. "
+    "Bilateral pulmonary metastases with multiple nodules. "
+    "Endobronchial lesion consistent with other pulmonary neoplasm. "
+    # Lymphoproliferative Disease
+    "Bulky mediastinal and bilateral hilar lymphadenopathy consistent with "
+    "lymphoproliferative disease. "
+    # Other Pulmonary Diagnosis
+    "Bilateral reticular opacities and honeycombing consistent with interstitial "
+    "lung disease. "
+    "Peribronchovascular nodularity consistent with sarcoidosis. "
+    "Pleural plaques and calcifications consistent with asbestos-related disease. "
+    "Increased parenchymal density consistent with pneumoconiosis. "
+    "Bilateral interstitial and alveolar opacities consistent with pulmonary edema. "
+    "Diffuse bilateral alveolar opacities consistent with ARDS. "
+    "Bilateral dependent opacities consistent with aspiration pneumonitis. "
+    "Radiation fibrosis and post-procedural changes consistent with iatrogenic "
+    "lung disease. "
+    "Bilateral hyperinflation and flattened hemidiaphragms consistent with COPD. "
+    "Bilateral nodular infiltrates consistent with pulmonary vasculitis. "
+    "Enlarged main pulmonary artery consistent with pulmonary hypertension. "
+    "Bilateral wedge-shaped peripheral opacities consistent with pulmonary "
+    "thromboembolic disease. "
+    "Diffuse parenchymal abnormality consistent with miscellaneous pulmonary disease. "
+    # Cardiac Disease
+    "Mitral annular calcification consistent with valvular heart disease. "
+    "Globular cardiomegaly consistent with myocardial disease. "
+    "Enlarged cardiac silhouette with pericardial effusion. "
+    "Vascular congestion and bilateral pleural effusions consistent with "
+    "congestive heart failure. "
+    "Abnormal cardiac contour consistent with other cardiac disease. "
+    # Aortic Disease
+    "Widened mediastinum with loss of aortic knob definition consistent with "
+    "aortic dissection. "
+    "Ectatic and tortuous thoracic aorta consistent with other aortic disease. "
+    # Miscellaneous
+    "Multiple bilateral rib fractures consistent with trauma. "
+    "Surgical clips and lobectomy changes consistent with post-treatment change. "
+    "Additional incidental finding consistent with miscellaneous disease."
+)
 
-Return ONLY the modified report text. Preserve section headers (FINDINGS:, IMPRESSION:).
-
-Reference report:
-{report}"""
-
-
-def _load_entries(input_path: str) -> List[Dict]:
-    p = Path(input_path)
-    if p.suffix == ".csv":
-        import pandas as pd
-        df = pd.read_csv(input_path)
-        col_map = {}
-        for col in df.columns:
-            lc = col.lower().replace(" ", "_")
-            if lc in ("ground_truth_raw", "reference", "ground_truth"):
-                col_map[col] = "ground_truth_raw"
-            elif lc in ("generated_raw", "candidate", "generated"):
-                col_map[col] = "generated_raw"
-        df = df.rename(columns=col_map)
-        if "sample_idx" not in df.columns:
-            df["sample_idx"] = list(range(len(df)))
-        return df.to_dict(orient="records")
-    with open(input_path) as f:
-        data = json.load(f)
-    return data.get("results", data) if isinstance(data, dict) else data
+VARIANTS = {
+    "normal":       NORMAL_REPORT,
+    "all_negative": ALL_NEGATIVE_REPORT,
+    "all_positive": ALL_POSITIVE_REPORT,
+}
 
 
-def _generate_adversarial(report: str, model: str) -> Optional[str]:
-    from call_llm import query_llm
-    messages = [
-        {"role": "system", "content": "You generate modified radiology reports for research calibration only."},
-        {"role": "user", "content": _ADVERSARIAL_PROMPT.format(report=report)},
+# ---------------------------------------------------------------------------
+# Loaders (identical logic to paraphrase_reports.py)
+# ---------------------------------------------------------------------------
+
+def _load_rexval(csv_path: Path) -> List[Dict[str, Any]]:
+    with csv_path.open(encoding="utf-8") as f:
+        raw_rows = list(csv.DictReader(f))
+
+    seen: Dict[str, int] = {}
+    rows: List[Dict[str, Any]] = []
+    for row_idx, r in enumerate(raw_rows):
+        sid = r["study_id"]
+        gt  = r["gt_report"]
+        if sid not in seen:
+            seen[sid] = len(rows)
+            rows.append({
+                "source_row_idx":   row_idx,
+                "source_report_id": sid,
+                "source_gt_key":    seen[sid],
+                "ground_truth_raw": gt,
+            })
+    return rows
+
+
+def _load_radevalx(csv_path: Path) -> List[Dict[str, Any]]:
+    with csv_path.open(encoding="utf-8") as f:
+        raw_rows = list(csv.DictReader(f))
+
+    seen: Dict[str, int] = {}
+    rows: List[Dict[str, Any]] = []
+    for row_idx, r in enumerate(raw_rows):
+        rid = r["study_id"]
+        gt  = r["ground_truth"]
+        if rid not in seen:
+            seen[rid] = len(rows)
+            rows.append({
+                "source_row_idx":   row_idx,
+                "source_report_id": rid,
+                "source_gt_key":    seen[rid],
+                "ground_truth_raw": gt,
+            })
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rexval",
+                    default=str(Path(__file__).parent.parent / "data/rexval/rexval_reports_long.csv"))
+    ap.add_argument("--radevalx",
+                    default=str(Path(__file__).parent.parent / "data/radevalx/radevalx_report.csv"))
+    ap.add_argument("--output",   default=str(Path(__file__).parent.parent / "data/extreme_baseline.json"))
+    args = ap.parse_args()
+
+    sources = [
+        ("rexval",   Path(args.rexval),   _load_rexval),
+        ("radevalx", Path(args.radevalx), _load_radevalx),
     ]
-    try:
-        return query_llm(messages=messages, model=model, max_tokens=2000, temperature=0.5)
-    except Exception as e:
-        warnings.warn(f"Adversarial generation failed: {e}")
-        return None
 
-
-def run(args: argparse.Namespace):
-    entries = _load_entries(args.input)
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    concordant_pairs = []
-    discordant_pairs = []
+    results: List[Dict[str, Any]] = []
     sample_idx = 0
 
-    for entry in entries:
-        gt = entry.get("ground_truth_raw", "")
-        idx = entry.get("sample_idx", sample_idx)
+    for source_name, csv_path, loader in sources:
+        rows = loader(csv_path)
+        print(f"[{source_name}] loaded {len(rows)} unique GTs")
 
-        # Concordant: candidate = exact copy
-        concordant_pairs.append({
-            "sample_idx": sample_idx,
-            "ground_truth_raw": gt,
-            "generated_raw": gt,
-            "case_type": "concordant",
-            "source_idx": idx,
-        })
-        sample_idx += 1
+        for variant_name, generated_text in VARIANTS.items():
+            for row in rows:
+                results.append({
+                    "sample_idx":        sample_idx,
+                    "ground_truth_raw":  row["ground_truth_raw"],
+                    "generated_raw":     generated_text,
+                    "variant":           variant_name,
+                    "source":            source_name,
+                    "source_report_id":  row["source_report_id"],
+                    "source_row_idx":    row["source_row_idx"],
+                    "source_gt_key":     row["source_gt_key"],
+                })
+                sample_idx += 1
 
-        # Discordant: LLM-generated adversarial version
-        adversarial = _generate_adversarial(gt, args.model)
-        if adversarial:
-            discordant_pairs.append({
-                "sample_idx": sample_idx,
-                "ground_truth_raw": gt,
-                "generated_raw": adversarial,
-                "case_type": "discordant",
-                "source_idx": idx,
-            })
-            sample_idx += 1
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump({"results": results}, f, indent=2)
 
-    all_pairs = concordant_pairs + discordant_pairs
-    raw_output = output_dir / "extreme_cases_raw.json"
-    with open(raw_output, "w") as f:
-        json.dump({"results": all_pairs}, f, indent=2)
-    print(f"Generated {len(all_pairs)} extreme cases → {raw_output}")
-
-    # Score with DISCERN
-    scored_output = output_dir / "extreme_cases_scored.json"
-    import subprocess
-    cmd = [
-        sys.executable, str(_ROOT / "scripts" / "run_discern.py"),
-        "--input",  str(raw_output),
-        "--output", str(scored_output),
-        "--mode",   "both",
-        "--model",  args.model,
-        "--tag",    "extreme_cases",
-    ]
-    if args.backend:
-        cmd += ["--backend", args.backend]
-    print(f"Scoring with DISCERN → {scored_output}")
-    subprocess.run(cmd, check=True)
-    print(f"Done. Scored extreme cases at {scored_output}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Generate and score extreme report pairs.")
-    parser.add_argument("--input",   required=True)
-    parser.add_argument("--output",  required=True)
-    parser.add_argument("--model",   default=None)
-    parser.add_argument("--backend", default=None)
-    parser.add_argument("--config",  default=None)
-    args = parser.parse_args()
-
-    if args.model is None:
-        cfg_path = Path(args.config) if args.config else _ROOT / "config.yaml"
-        if cfg_path.exists():
-            with open(cfg_path) as f:
-                cfg = yaml.safe_load(f) or {}
-            args.model = (cfg.get("discern") or {}).get("default_model", "google/gemma-3-27b-it")
-        else:
-            args.model = "google/gemma-3-27b-it"
-
-    run(args)
+    print(f"[done] wrote {len(results)} entries → {output_path}")
+    for source_name, _, _ in sources:
+        for variant_name in VARIANTS:
+            n = sum(1 for r in results if r["source"] == source_name and r["variant"] == variant_name)
+            print(f"  {source_name}/{variant_name}: {n}")
 
 
 if __name__ == "__main__":

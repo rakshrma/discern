@@ -20,7 +20,11 @@ dependencies:
     - pydantic>=2.0.0
     - sentence-transformers>=3.0.0
     - scikit-learn>=1.1.0
-    - openpyxl>=3.0.0
     - Pillow>=10.0.0
-    # Install CRIMSON from the repo:
+
+    # Install CRIMSON from its repo:
     # pip install -e /path/to/CRIMSON
+    #
+    # After creating this env, set in config.yaml:
+    # conda_envs:
+    #   crimson: /path/to/conda/envs/crimson/bin/python

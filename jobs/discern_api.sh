@@ -4,45 +4,43 @@
 #SBATCH -t 24:00:00
 #SBATCH -o logs/%j.out
 #SBATCH -e logs/%j.err
-# No GPU needed — all inference is via API (Anthropic/OpenAI/OpenRouter/Databricks)
+# No GPU needed — inference runs via Databricks API.
 
-# ── Environment ──────────────────────────────────────────────────────────────
+# ── Environment ───────────────────────────────────────────────────────────────
 CONDA_BASE=$(conda info --base)
 source "$CONDA_BASE/etc/profile.d/conda.sh"
-conda activate /vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace/green_score
+conda activate discern          # update to your conda env name
 
-DISCERN_ROOT=/vast/projects/witschey/pmbb-vision/research_projects/rakshrma/workspace/discern
-cd "$DISCERN_ROOT"
+REPO=/path/to/discern           # update to your discern repo path
+cd "$REPO"
 
-# ── Parameters ───────────────────────────────────────────────────────────────
-INPUT="${INPUT:-data/rexval/rexval_reports_long.csv}"
-OUTPUT_DIR="${OUTPUT_DIR:-data/discern_runs}"
-BACKEND="${BACKEND:-hf}"
-MODEL="${MODEL:-google/gemma-4-31B-it}"
-MAX_CONCURRENT="${MAX_CONCURRENT:-4}"
-TAG="${TAG:-batch_v0}"
-REPEATS="${REPEATS:-1}"
+# ── Models to evaluate ────────────────────────────────────────────────────────
+MODELS=(
+    "databricks-claude-sonnet-4-6"
+    "databricks-claude-opus-4-5"
+    "databricks-claude-haiku-4-5"
+)
 
-mkdir -p "$OUTPUT_DIR" logs
+# ── Run DISCERN + mini-DISCERN for each model × N repeats ────────────────────
+REPEATS=(0 1 2)
 
-# ── Run N repeats ─────────────────────────────────────────────────────────────
-for i in $(seq 1 "$REPEATS"); do
-    TAG_RUN="${TAG}_r${i}"
-    MODEL_SLUG=$(echo "$MODEL" | tr '/' '_' | tr '-' '_')
-    OUTPUT="${OUTPUT_DIR}/discern_${MODEL_SLUG}_${TAG_RUN}.json"
+for MODEL in "${MODELS[@]}"; do
+    for REP in "${REPEATS[@]}"; do
+        RUN_TAG="v${REP}"
 
-    echo "[$(date)] Starting DISCERN run ${i}/${REPEATS}: $MODEL → $OUTPUT"
+        echo ""
+        echo "================================================================"
+        echo "Model: $MODEL  |  Run: $RUN_TAG"
+        echo "================================================================"
 
-    python scripts/run_discern.py \
-        --input   "$INPUT" \
-        --output  "$OUTPUT" \
-        --mode    both \
-        --backend "$BACKEND" \
-        --model   "$MODEL" \
-        --max-concurrent "$MAX_CONCURRENT" \
-        --tag "$TAG_RUN"
+        python scripts/run_discern.py \
+            --dataset both \
+            --model "$MODEL" \
+            --run-tag "$RUN_TAG" \
+            --skip-green
 
-    echo "[$(date)] Finished run ${i}: $OUTPUT"
+        echo "Done: $MODEL / $RUN_TAG"
+    done
 done
 
-echo "All runs complete."
+echo "All done."

@@ -17,7 +17,7 @@ from typing import Dict, List, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator, ValidationError
 
-from call_llm import (query_llm, query_llm_batch,
+from llm_backend import (query_llm, query_llm_batch,
                       TokenLimitError, TOKEN_LIMIT_PREFIX)  # adjust import path as needed
 
 MAX_TOKENS_CAP = 25000   # never escalate beyond model hard limit

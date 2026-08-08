@@ -1,548 +1,153 @@
-# DISCERN: Clinical Impact-Aware Framework for Radiology Report Comparison
+# DISCERN
 
-<p align="center">
-  <img src="data/discern_figure1.png" alt="DISCERN Framework Overview" width="800"/>
-</p>
-
-**DISCERN** is an LLM-powered evaluation framework designed to assess the clinical accuracy of AI-generated radiology reports by comparing them against radiologist-authored ground truth reports. Unlike traditional NLP metrics (BLEU, ROUGE, BERTScore), DISCERN operates at the *clinical entity level*, capturing diagnostically meaningful discrepancies and weighting them by their clinical significance — providing evaluation scores that align with how radiologists actually judge report quality.
-
----
-
-## Table of Contents
-
-- [Motivation](#motivation)
-- [How DISCERN Works](#how-discern-works)
-- [Repository Structure](#repository-structure)
-- [Entity Taxonomy](#entity-taxonomy)
-- [Scoring System](#scoring-system)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Quickstart Example](#quickstart-example)
-- [Usage](#usage)
-- [Output Format](#output-format)
-- [Evaluation and Benchmarking](#evaluation-and-benchmarking)
-- [Supported LLM Backends](#supported-llm-backends)
-- [Testing](#testing)
-- [Citation](#citation)
-- [License](#license)
-
----
-
-## Motivation
-
-Automated radiology report generation is a rapidly growing area of medical AI. However, evaluating these generated reports remains a significant challenge. Standard NLP metrics focus on surface-level text similarity and fail to capture what matters most in clinical practice: whether the generated report conveys the same diagnostic information as the ground truth, and how clinically consequential any discrepancies are.
-
-DISCERN addresses this gap by introducing an evaluation framework that:
-
-- Extracts structured clinical entities from both the reference and candidate reports.
-- Compares entities across multiple clinical dimensions (diagnosis, location, severity, temporal change).
-- Assigns clinical significance scores (0–4) to each discrepancy based on potential patient impact.
-- Produces a single composite penalty score (the **DISCERN score**) that reflects the overall clinical divergence.
-
----
-
-## How DISCERN Works
-
-<p align="center">
-  <img src="data/discern_figure2.png" alt="DISCERN Pipeline" width="800"/>
-</p>
-
-DISCERN evaluates a candidate radiology report against a ground truth report through a multi-stage pipeline, with each stage leveraging LLM-based structured extraction and validation:
-
-1. **Section Parsing** — The raw radiology report is segmented into standardized sections (history, technique, comparison, findings, impression) using a local Hugging Face model.
-
-2. **Entity Extraction** — Clinical entities (e.g., "Pneumonia", "Pleural Effusion", "Rib Fracture") are identified in both the reference and candidate reports, along with their presence status (POSITIVE, NEGATIVE, UNCERTAIN).
-
-3. **Attribute Comparison** — For entities present in both reports, the framework evaluates concordance across four clinical dimensions:
-   - **Diagnosis concordance** — Does the candidate report agree on the diagnostic interpretation?
-   - **Location concordance** — Are anatomical locations consistent?
-   - **Severity concordance** — Do severity assessments match?
-   - **Temporal comparison** — Are temporal characterizations (new, stable, worsening) aligned?
-
-4. **Discrepancy Identification** — Entities present in only one report are flagged as either `missing_in_candidate` (omissions) or `extra_in_candidate` (false predictions).
-
-5. **Clinical Significance Scoring** — Each entity receives a significance score from 0 to 4, reflecting the potential clinical impact of any discrepancy.
-
-6. **DISCERN Score Computation** — Entity-level penalties are aggregated into a final score that quantifies the overall clinical divergence between the two reports.
-
----
-
-## Repository Structure
-
-```
-discern/
-├── README.md
-├── setup.py                               # Package installation configuration
-├── requirements.txt                       # Python dependencies
-├── pytest.ini                             # Pytest configuration and custom markers
-├── config/
-│   ├── attribute_extraction_prompt.yaml   # Prompt template for attribute comparison
-│   ├── diagnosis_only.yaml                # Diagnosis-level entity taxonomy
-│   ├── entities.yaml                      # Full entity taxonomy (findings + diagnoses)
-│   ├── entity_extraction_prompt.yaml      # Prompt template for entity extraction
-│   ├── findings_only.yaml                 # Findings-level entity taxonomy
-│   ├── section_parsing_prompt.yaml        # Prompt template for report section parsing
-│   └── significance_prompt.yaml           # Prompt template for clinical significance scoring
-├── data/
-│   ├── discern_figure1.png                # Framework overview figure
-│   └── discern_figure2.png                # Pipeline detail figure
-├── src/                                   # Core DISCERN pipeline modules
-│   ├── __init_.py
-│   ├── call_llm.py                        # LLM interface (Databricks + Hugging Face)
-│   ├── evaluate_reports.py                # End-to-end evaluation orchestrator
-│   ├── evaluate_significance.py           # Clinical significance scoring module
-│   ├── extract_entities.py                # Entity extraction with structured validation
-│   ├── generate_attributes.py             # Attribute concordance comparison module
-│   ├── get_discern_score.py               # DISCERN score computation and aggregation
-│   ├── section_parsing.py                 # Report section parsing (local HF models)
-│   └── utils.py                           # Entity merging and helper utilities
-├── run_example.py                         # Self-contained quickstart script (llama-3.1-8b-instruct)
-├── tests/
-│   └── test_discern.py                    # Unit and integration test suite (77 tests)
-└── inference/                             # Benchmarking and comparison scripts
-    ├── green_eval_radeval_rexval.py        # GREEN metric evaluation comparison
-    ├── inference_radeval.py               # RadEvalX inference runner
-    ├── inference_rexval.py                # ReXVal inference runner
-    ├── nlp_metrics_eval_radevalx.py       # NLP metrics evaluation on RadEvalX
-    ├── nlp_metrics_eval_rexval.py         # NLP metrics evaluation on ReXVal
-    ├── radevalx_metric_calculator.py      # RadEvalX metric computation
-    ├── rexval_metric_calculator.py        # ReXVal metric computation
-    ├── run_radevalx_comparison.py         # Full RadEvalX benchmark comparison pipeline
-    └── run_rexval_comparison.py           # Full ReXVal benchmark comparison pipeline
-```
-
----
-
-## Entity Taxonomy
-
-DISCERN uses a comprehensive, hierarchically organized taxonomy of **121 chest X-ray entities** spanning 30 categories. The taxonomy is split into two levels:
-
-### Findings-Level Entities
-
-Radiographic observations and anatomical abnormalities, including:
-
-- **Quality of Exams** — Suboptimal penetration, inspiration, body rotation, etc.
-- **Tubes and Lines** — Endotracheal tubes, central venous catheters, chest tubes, etc.
-- **Lung and Pleural Opacity** — Nodules, atelectasis, airspace opacity, pleural effusion, etc.
-- **Lung and Pleural Lucency** — Emphysema, pneumothorax, bronchiectasis, etc.
-- **Cardiac/Vascular** — Enlarged cardiac contour, aortic dilatation, pulmonary artery enlargement, etc.
-- **Musculoskeletal** — Rib/clavicle/spine fractures, degenerative changes, bone density abnormalities, etc.
-
-### Diagnosis-Level Entities
-
-Clinical diagnoses and disease categories, including:
-
-- **Infectious Disease** — Pneumonia, tuberculosis
-- **Neoplasm** — Primary lung malignancy, pulmonary metastases
-- **Cardiac Disease** — Congestive heart failure, valvular disease, pericardial disease
-- **Pulmonary Disease** — ILD, COPD, pulmonary edema, ARDS, pulmonary hypertension, etc.
-- **Aortic Disease** — Aortic dissection/aneurysm
-
-The full taxonomy is defined in [`config/entities.yaml`](config/entities.yaml), with subsets available in [`config/findings_only.yaml`](config/findings_only.yaml) and [`config/diagnosis_only.yaml`](config/diagnosis_only.yaml).
-
----
-
-## Scoring System
-
-### Concordance Labels
-
-Each shared entity is evaluated across four dimensions, with each assigned one of:
-
-| Label | Meaning |
-|---|---|
-| `concordant` | Reports agree on this dimension |
-| `partial` | Partial agreement with minor differences |
-| `discordant` | Reports disagree |
-| `candidate-adds` | Candidate report adds information not in the reference |
-| `candidate-misses` | Candidate report omits information present in the reference |
-| `not mentioned` | Dimension not applicable to this entity |
-
-### Clinical Significance Scale (0–4)
-
-| Score | Interpretation |
-|---|---|
-| **0** | No meaningful clinical impact; fully concordant entity |
-| **1** | Low significance; incidental or chronic/stable discrepancy |
-| **2** | Moderate relevance; may affect follow-up or differential diagnosis |
-| **3** | Important discrepancy likely to affect treatment or near-term workup |
-| **4** | Critical, time-sensitive discrepancy likely to change immediate management |
-
-### DISCERN Score
-
-The final DISCERN score for a report pair is computed as the sum of per-entity penalties:
-
-```
-Entity Penalty = significance_score × raw_penalty
-```
-
-Where `raw_penalty` is the count of discordant dimensions (diagnosis, location, severity, temporal) for that entity. Higher DISCERN scores indicate greater clinical divergence between the candidate and reference reports.
-
----
-
-## Installation
-
-### Prerequisites
-
-- Python 3.8+
-- Access to a Databricks serving endpoint (for cloud LLM inference) **or** a local GPU for Hugging Face models
-- An API token for your chosen LLM backend
-
-### Setup
-
-```bash
-git clone https://github.com/rakshrma/discern.git
-cd discern
-```
-
-**Option 1 — Install with pip (recommended):**
-
-```bash
-# Core pipeline only
-pip install .
-
-# Core + benchmarking dependencies
-pip install ".[inference]"
-
-# Everything
-pip install ".[all]"
-```
-
-**Option 2 — Install from requirements.txt:**
-
-```bash
-pip install -r requirements.txt
-```
-
-> **Note:** The [GREEN](https://github.com/Stanford-AIMI/GREEN) metric package is not available on PyPI. If you need GREEN evaluation, install it separately from the Stanford AIMI repository.
-
-### Token Configuration
-
-Place your API tokens in the `config/` directory:
-
-- **Databricks**: Save your token to `config/.databricks.token`
-- **Hugging Face**: Save your token to `config/.hftoken`
-
----
-
-## Configuration
-
-All prompts and entity definitions are stored as YAML files in the `config/` directory. You can customize the evaluation by modifying:
-
-| File | Purpose |
-|---|---|
-| `entities.yaml` | Full entity taxonomy (modify to add/remove entities) |
-| `findings_only.yaml` | Findings-only subset of the taxonomy |
-| `diagnosis_only.yaml` | Diagnosis-only subset of the taxonomy |
-| `entity_extraction_prompt.yaml` | LLM prompt for extracting entities from reports |
-| `attribute_extraction_prompt.yaml` | LLM prompt for comparing attributes between reports |
-| `significance_prompt.yaml` | LLM prompt for assigning clinical significance scores |
-| `section_parsing_prompt.yaml` | Prompt for parsing report sections (local model) |
-
----
-
-## Quickstart Example
-
-The fastest way to try DISCERN is with the included `run_example.py` script. It uses `meta-llama/Llama-3.1-8B-Instruct` via HuggingFace and runs the full pipeline on a built-in pair of sample radiology reports.
-
-**Step 1 — Save your HuggingFace token:**
-
-```bash
-echo "hf_YOUR_TOKEN_HERE" > config/.hftoken
-```
-
-**Step 2 — Install dependencies:**
-
-```bash
-pip install -r requirements.txt
-```
-
-**Step 3 — Run:**
-
-```bash
-python run_example.py
-```
-
-The script will download and cache the model on first run, then print per-entity evaluation results and a final DISCERN score. Example output:
-
-```
-============================================================
-DISCERN Evaluation Pipeline
-Model : meta-llama/Llama-3.1-8B-Instruct
-============================================================
-
-[Ground Truth Report]
-FINDINGS: The cardiac silhouette is enlarged. There is a moderate
-right-sided pleural effusion. Patchy airspace opacity is present
-in the right lower lobe, consistent with pneumonia...
-
-[Candidate Report]
-FINDINGS: The heart size appears normal. There is a small left-sided
-pleural effusion. The lungs are clear without focal consolidation...
-
-Running evaluation...
-
-============================================================
-DISCERN Score: 18.00
-============================================================
-
-Entities evaluated: 3
-
-[1] Heart :: Enlarged Cardiac Contour
-     Reference finding : The cardiac silhouette is enlarged.
-     Candidate finding : The heart size appears normal.
-     Diagnosis         : discordant
-     Location          : concordant
-     Severity          : not mentioned
-     Temporal          : not mentioned
-     Significance      : 3 / 4
-     Rationale         : Mischaracterizing cardiac size may alter workup for heart failure.
-
-[2] Pleural :: Pleural Effusion
-     Reference finding : Moderate right-sided pleural effusion.
-     Candidate finding : Small left-sided pleural effusion.
-     Diagnosis         : concordant
-     Location          : discordant
-     Severity          : discordant
-     Temporal          : not mentioned
-     Significance      : 2 / 4
-     Rationale         : Laterality and size discrepancy may affect drainage decisions.
-
-[3] Infectious Disease :: Pneumonia
-     Reference finding : Patchy airspace opacity in the right lower lobe, consistent with pneumonia.
-     Candidate finding : (not mentioned)
-     Discrepancy type  : missing_in_candidate
-     Significance      : 4 / 4
-     Rationale         : Missed pneumonia is a critical omission requiring immediate treatment.
-```
-
-> **Note:** Actual output will vary depending on the model's inference. DISCERN scores reflect the clinical severity of discrepancies, not text similarity.
-
----
-
-## Usage
-
-### End-to-End Report Evaluation
-
-The primary entry point is `src/evaluate_reports.py`, which orchestrates the full pipeline and returns both the per-entity evaluation and the aggregate DISCERN score:
-
-```python
-from src.evaluate_reports import run_evaluation
-
-discern_evaluation, discern_score = run_evaluation(
-    report_text="FINDINGS: The heart is normal in size...",          # Ground truth report
-    candidate_text="FINDINGS: The heart appears enlarged...",        # AI-generated report
-    model="databricks-claude-sonnet-4-5",                        # LLM model name
-    token_path="config/.databricks.token",                          # API token path
-    prompt_yaml_path="config/entity_extraction_prompt.yaml",        # Entity extraction prompt
-    entities_yaml_path="config/entities.yaml",                      # Entity taxonomy
-    attribute_prompt_path="config/attribute_extraction_prompt.yaml", # Attribute comparison prompt
-    significance_yaml_path="config/significance_prompt.yaml",       # Significance scoring prompt
-)
-
-print(f"DISCERN Score: {discern_score}")
-```
-
-The `discern_evaluation` is a list of dictionaries, one per entity, each containing:
-
-```python
-{
-    "entity": "Heart :: Enlarged Cardiac Contour",
-    "reference_report_finding": "The heart is normal in size.",
-    "candidate_report_finding": "The heart appears enlarged.",
-    "diagnosis_concordance": "discordant",
-    "location_concordance": "concordant",
-    "severity_concordance": "candidate-adds",
-    "temporal_comparison": "not mentioned",
-    "significance_score": 3,
-    "rationale": "Mischaracterizing cardiac size may alter workup..."
-}
-```
-
-### Computing the DISCERN Score from CSV
-
-If you have evaluation results saved as a CSV, compute the aggregate DISCERN score with:
-
-```python
-from src.get_discern_score import process_csv
-
-df = process_csv(
-    input_path="path/to/evaluation_results.csv",
-    findings_column="discern_eval",
-)
-print(df[["discern_score"]].describe())
-```
-
-Or process all CSV files in a directory:
-
-```python
-from src.get_discern_score import process_directory
-
-results = process_directory(
-    directory="path/to/results/",
-    findings_column="discern_eval",
-)
-```
-
-### Section Parsing (Local Model)
-
-To parse a raw radiology report into structured sections using a local Hugging Face model:
-
-```python
-from src.section_parsing import run_single_report
-
-status, raw_output, sections = run_single_report(
-    model="your-hf-model-name",
-    prompt_yaml="config/section_parsing_prompt.yaml",
-    report_text="HISTORY: Chest pain. FINDINGS: Clear lungs...",
-)
-
-print(sections.findings)
-print(sections.impression)
-```
-
----
-
-## Output Format
-
-`run_evaluation()` returns a tuple `(discern_evaluation, discern_score)`.
-
-- **`discern_score`** (`float`) — The aggregate DISCERN score for the report pair. Higher values indicate greater clinical divergence. A score of `0.0` means full concordance across all entities.
-
-- **`discern_evaluation`** (`list[dict]`) — One dictionary per evaluated entity. Each dictionary contains the following keys:
-
-| Key | Type | Description |
-|---|---|---|
-| `entity` | `str` | The clinical entity name in `Category :: Entity` format (e.g., `"Heart :: Enlarged Cardiac Contour"`). Drawn from the entity taxonomy in `config/entities.yaml`. |
-| `reference_report_finding` | `str \| None` | The sentence(s) in the ground truth report that mention this entity. `None` for entities missing in the reference. |
-| `candidate_report_finding` | `str \| None` | The sentence(s) in the candidate report that mention this entity. `None` for entities missing in the candidate. |
-| `diagnosis_concordance` | `str` | Whether the candidate agrees on the diagnostic interpretation. One of: `concordant`, `partial`, `discordant`. Only set for entities present in both reports. |
-| `location_concordance` | `str` | Whether the anatomical location is consistent. One of: `concordant`, `partial`, `discordant`, `candidate-adds`, `candidate-misses`, `not mentioned`. |
-| `severity_concordance` | `str` | Whether the severity assessment matches. Same label set as `location_concordance`. |
-| `temporal_comparison` | `str` | Whether the temporal characterization (new, stable, worsening) aligns. Same label set as `location_concordance`. |
-| `discrepancy_type` | `str \| None` | Set only for entities found in one report but not the other. `"missing_in_candidate"` means the entity is in the reference but absent in the candidate (omission). `"extra_in_candidate"` means it is in the candidate but not the reference (false prediction). `None` for entities present in both reports. |
-| `significance_score` | `int` | Clinical significance of the discrepancy on a 0–4 scale (see [Scoring System](#scoring-system)). `0` indicates no meaningful impact; `4` indicates a critical, time-sensitive discrepancy. |
-| `rationale` | `str` | LLM-generated explanation justifying the significance score in clinical terms. |
-
-### Concordance Label Definitions
-
-| Label | Applies To | Meaning |
-|---|---|---|
-| `concordant` | All dimensions | Both reports agree on this attribute |
-| `partial` | All dimensions | Partial agreement with minor differences |
-| `discordant` | All dimensions | Reports disagree on this attribute |
-| `candidate-adds` | Location, Severity, Temporal | Candidate report includes this attribute but the reference does not |
-| `candidate-misses` | Location, Severity, Temporal | Reference report includes this attribute but the candidate does not |
-| `not mentioned` | All dimensions | This attribute is not applicable or not described for this entity |
-
----
-
-## Evaluation and Benchmarking
-
-DISCERN includes comprehensive comparison scripts (in the `inference/` directory) for benchmarking against established radiology report evaluation methods:
-
-- **ReXVal** — Radiologist expert validation benchmark 
-- **RadEvalX** — Radiology evaluation benchmark 
-- **GREEN** — Generative radiology report evaluation 
-- **NLP Metrics** — BLEU, ROUGE, BERTScore, and other traditional metrics
-
-These scripts compute correlation statistics (Kendall's tau, Spearman's rho) between DISCERN scores and expert radiologist annotations, demonstrating alignment with clinical judgment.
-
----
-
-## Supported LLM Backends
-
-DISCERN supports two inference backends:
-
-| Backend | Use Case | Configuration |
-|---|---|---|
-| **Databricks Serving Endpoints** | Cloud-based LLM inference (Claude, GPT, etc.) | Set token in `config/.databricks.token` |
-| **Hugging Face Transformers** | Local GPU inference for open-source models | Set token in `config/.hftoken` |
-
-The backend is automatically selected based on the model name: models prefixed with `databricks-` route to the Databricks endpoint; all others use the local Hugging Face pipeline.
-
----
-
-## Testing
-
-DISCERN includes a comprehensive test suite (`tests/test_discern.py`) with **77 tests** across two tiers.
-
-### Test Environment
-
-Tests are designed to run in the `reads` conda environment:
-
-```bash
-conda activate reads
-```
-
-All required packages (`pydantic`, `PyYAML`, `openai`, `pandas`, `torch`, `transformers`, etc.) must satisfy the versions in `requirements.txt`.
-
-### Running Tests
-
-**Unit tests only** (no LLM required, runs in seconds):
-
-```bash
-pytest tests/test_discern.py -v -m "not integration"
-```
-
-**Integration tests** (requires `meta-llama/Llama-3.1-8B-Instruct` loaded locally via HuggingFace and a valid `config/.hftoken`):
-
-```bash
-pytest tests/test_discern.py -v -m integration
-```
-
-**All tests:**
-
-```bash
-pytest tests/test_discern.py -v
-```
-
-### Test Coverage
-
-| Test Class | Module | # Tests | Description |
-|---|---|---|---|
-| `TestParseFindings` | `get_discern_score` | 5 | Empty, NaN, valid/invalid string parsing |
-| `TestComputeEntityPenalty` | `get_discern_score` | 8 | Concordant/discordant/partial/zero-significance penalties |
-| `TestComputeDiscernScore` | `get_discern_score` | 5 | Empty list, single entity, multi-entity aggregation |
-| `TestComputeCounts` | `get_discern_score` | 5 | Error bucket counting by type and significance |
-| `TestMergeCommonWithMissingExtra` | `utils` | 9 | Missing/extra entity detection, presence flags, whitespace normalization |
-| `TestMergeAttributesWithSignificance` | `utils` | 7 | Strict/non-strict merging, field preservation, error paths |
-| `TestSanitizeJsonText` | `extract_entities` | 5 | Trailing commas, curly quotes, whitespace stripping |
-| `TestExtractFirstJsonArray` | `extract_entities` | 6 | Nested arrays, escaped quotes, preamble text |
-| `TestValidateEntities` | `extract_entities` | 5 | Invalid/duplicate/missing-key entity filtering |
-| `TestBuildMessages` | `extract_entities` | 4 | Message structure, roles, and content injection |
-| `TestIsDb` | `call_llm` | 7 | Databricks vs HuggingFace model routing logic |
-| `TestQueryLlmMocked` | `call_llm` | 2 | Mocked HF and Databricks backend dispatch |
-| `TestQueryLlmIntegration` *(integration)* | `call_llm` | 2 | Live generation with `llama-3.1-8b-instruct` |
-| `TestEntityExtractionIntegration` *(integration)* | `extract_entities` | 4 | End-to-end entity extraction, schema validation |
-| `TestEndToEndEvaluationIntegration` *(integration)* | `evaluate_reports` | 3 | Concordant vs discordant scoring, output field validation |
-
-### Integration Test Model
-
-Integration tests use `meta-llama/Llama-3.1-8B-Instruct` via the HuggingFace Transformers pipeline. Ensure:
-
-- A valid HuggingFace token is saved to `config/.hftoken`
-- A CUDA-capable GPU is available (the model loads in `bfloat16`)
-- The model is accessible on HuggingFace (requires accepting the Llama 3.1 license)
-
----
+📄 **Paper (medRxiv preprint):** https://www.medrxiv.org/content/10.64898/2026.05.26.26353612v2
 
 ## Citation
 
-If you use DISCERN in your research, please cite:
+If you use DISCERN, please cite the preprint:
 
 ```bibtex
-@article{sharma2025discern,
-  title={DISCERN: A Clinical Impact-Aware Framework for Radiology Report Comparison},
-  author={Sharma, Rakesh and Beeche, Cameron and Dong, Jessie and Zhuang, Richard and Qu, Huaizhi and Zhang, Ruichen and Gangaram, Vineeth and Goswami, Pulak and Xin, Jiayi and Ballard, Jenna and Goldberg, Ari and Sagreiya, Hersh and Long, Qi and Chen, Tianlong and Witschey, Walter}
+@article{discern2026,
+  title   = {DISCERN: A Clinical Impact-aware Framework for Radiology Report Comparison},
+  author  = {Sharma, Rakesh and Beeche, Cameron and Dong, Jessie and Zhuang, Richard and
+             Qu, Huaizhi and Zhang, Ruichen and Gangaram, Vineeth and Goswami, Pulak and
+             Xin, Jiayi and Ballard, Jenna and Duda, Jeffery and Kahn, Jr., Charles E. and
+             Goldberg, Ari and Sagreiya, Hersh and Long, Qi and Chen, Tianlong and
+             Witschey, Walter},
+  journal = {medRxiv},
+  year    = {2026},
+  doi     = {10.64898/2026.05.26.26353612},
+  url     = {https://www.medrxiv.org/content/10.64898/2026.05.26.26353612v2}
 }
 ```
 
----
+**DISCERN** is an LLM-based framework for evaluating radiology reports at the
+clinical entity level. Given a reference (ground truth) report and a candidate
+report, DISCERN extracts radiology entities, compares their attributes
+(diagnosis, location, severity, temporal), and scores clinical significance of
+any discrepancies.
 
-## License
+## Features
 
+- **Full DISCERN**: 3-stage pipeline (entity extraction → attribute comparison → significance scoring)
+- **mini-DISCERN**: Single-prompt evaluation for faster batch processing
+- **NLP metrics**: BLEU-1, ROUGE-L, METEOR, BERTScore, RadGraph F1
+- **Model-based metrics**: GREEN, CRIMSON (separate conda envs)
+- **Flexible input**: CSV or JSON with arbitrary report pairs
+- **Resume support**: Re-running with the same `--output` skips already-scored entries
+- **Batch processing**: Auto-selects API batch (Databricks) or GPU batch (vLLM)
 
+## Quick Start
 
----
+### 1. Install
 
-## Acknowledgments
+```bash
+conda env create -f envs/discern.yml
+conda activate discern
+pip install -e .
+```
+
+### 2. Configure credentials
+
+```bash
+cp config.example.yaml config.yaml
+# Edit config.yaml and fill in your credentials
+```
+
+### 3. Prepare your data
+
+Your input file should be a CSV with at minimum two columns:
+
+| reference | candidate |
+|-----------|-----------|
+| Heart is enlarged with bilateral pleural effusions... | Heart size is normal. Lungs are clear... |
+
+Column name aliases also accepted: `ground_truth_raw`/`generated_raw`, `gt_report`/`candidate_report`.
+
+### 4. Run
+
+```bash
+# Score with NLP metrics + DISCERN (uses model from config.yaml)
+python scripts/run_metrics.py --input pairs.csv --output scored.json
+
+# Quick test on first 5 rows
+python scripts/run_metrics.py --input pairs.csv --output test.json --count 5
+
+# NLP metrics only
+python scripts/run_metrics.py --input pairs.csv --output scored.json --metrics nlp
+
+# Specific model
+python scripts/run_metrics.py --input pairs.csv --output scored.json \
+    --model databricks-claude-sonnet-4-6
+```
+
+## Output Format
+
+```json
+{
+  "_metadata": {"run_date": "2025-01-01", "model": "...", ...},
+  "results": [
+    {
+      "sample_idx": 0,
+      "ground_truth_raw": "...",
+      "generated_raw": "...",
+      "bleu": 0.42,
+      "rouge": 0.55,
+      "meteor": 0.48,
+      "bertscore": 0.87,
+      "discern_score": 4,
+      "discern_evaluation": [...],
+      "mini_discern_score": 3,
+      "mini_discern_evaluation": [...]
+    }
+  ]
+}
+```
+
+## Benchmark Datasets (ReXVal / RaDEvalX)
+
+To evaluate against radiologist-annotated benchmarks:
+
+```bash
+# Download data from PhysioNet (credentialed access required)
+# Place rexval_reports_long.csv in data/rexval/
+# Place radevalx_report.csv in data/radevalx/
+
+python scripts/run_discern.py --dataset both
+```
+
+## Robustness Evaluation
+
+```bash
+# Generate paraphrased reports
+python scripts/run_paraphrase.py --output data/robustness/paraphrase.json
+
+# Score DISCERN on paraphrased pairs
+python scripts/run_discern_paraphrase.py --input data/robustness/paraphrase.json
+
+# Build and score extreme-case baselines
+python scripts/run_extreme_cases.py --output data/extreme_baseline.json
+python scripts/run_metrics.py --input data/extreme_baseline.json \
+    --output data/extreme_baseline_scored.json
+```
+
+## SLURM Jobs
+
+See `jobs/` for ready-to-submit SLURM launchers:
+
+| Script | Purpose |
+|--------|---------|
+| `jobs/run_custom.sh` | Run on your own dataset |
+| `jobs/discern_api.sh` | Multi-model sweep via Databricks API |
+| `jobs/discern_vllm.sh` | Multi-model sweep via vLLM on GPU nodes |
+| `jobs/paraphrase_generate.sh` | Generate paraphrase robustness dataset |
+| `jobs/paraphrase_eval.sh` | Evaluate DISCERN on paraphrased pairs |
+
+## Environments
+
+| File | Use case |
+|------|----------|
+| `envs/discern.yml` | Core DISCERN + NLP metrics (CPU/API) |
+| `envs/vllm.yml` | Local GPU inference via vLLM |
+| `envs/green.yml` | GREEN metric (separate env due to deps) |
+| `envs/crimson.yml` | CRIMSON metric |

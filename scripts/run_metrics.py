@@ -1,61 +1,72 @@
 """
-run_metrics.py — Single entry point for all DISCERN metrics.
+run_metrics.py — Evaluate radiology report pairs with any combination of metrics.
 
-Runs any combination of: BLEU, ROUGE, METEOR, BERTScore, SembScore,
-RadGraph, RadCliQ, RaTEScore, GREEN, CRIMSON, BLUERT, FineRadScore,
-DISCERN, mini-DISCERN on a JSON or CSV input file.
+This is the primary entry point for users who have a CSV or JSON file of
+reference/candidate report pairs and want to score them.
 
 Input formats
 -------------
   JSON  — {"results": [{sample_idx, ground_truth_raw, generated_raw, ...}, ...]}
-           (compatible with vlm_cxr_benchmark chexpert_plus_valid_results.json)
-  CSV   — columns: sample_idx (optional), reference, candidate
-           (or ground_truth_raw / generated_raw column names also accepted)
+  CSV   — columns: reference, candidate  (or ground_truth_raw / generated_raw)
 
-Resume
-------
-  Re-running with the same --output will skip already-scored entries.
+Resume support
+--------------
+  Re-running with the same --output file will skip already-scored entries.
 
 Examples
 --------
-  python scripts/run_metrics.py --input results.json --output scored.json
-  python scripts/run_metrics.py --input results.json --output scored.json --metrics all
-  python scripts/run_metrics.py --input pairs.csv --output scored.json --metrics nlp discern
-  python scripts/run_metrics.py --input results.json --output scored.json \\
-      --backend openrouter --model google/gemma-3-27b-it --config config.yaml
-"""
+  # Score a CSV with NLP metrics only
+  python scripts/run_metrics.py \\
+      --input pairs.csv --output scored.json --metrics nlp
 
+  # Score a JSON with all enabled metrics (from config.yaml)
+  python scripts/run_metrics.py \\
+      --input results.json --output scored.json
+
+  # Quick test on first 5 rows
+  python scripts/run_metrics.py \\
+      --input pairs.csv --output test.json --count 5
+
+  # Use a specific model, override config
+  python scripts/run_metrics.py \\
+      --input pairs.csv --output scored.json \\
+      --model databricks-claude-sonnet-4-6 --metrics nlp discern
+"""
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import socket
 import sys
 import warnings
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Allow running as script from repo root or scripts/ dir
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 import yaml
 
 METRIC_GROUPS = {
-    "nlp":     ["bleu", "rouge", "meteor", "bertscore"],
-    "radiology": ["semb_score", "radgraph", "radcliq", "ratescore"],
-    "model":   ["green", "crimson", "bluert"],
-    "llm":     ["fineradscor"],
-    "discern": ["discern", "mini_discern"],
-    "all":     ["bleu", "rouge", "meteor", "bertscore",
-                "semb_score", "radgraph", "radcliq", "ratescore",
-                "green", "crimson", "bluert", "fineradscor",
-                "discern", "mini_discern"],
+    "nlp":      ["bleu", "rouge", "meteor", "bertscore", "radgraph"],
+    "model":    ["green", "crimson"],
+    "discern":  ["discern", "mini_discern"],
+    "all":      ["bleu", "rouge", "meteor", "bertscore", "radgraph",
+                 "green", "crimson", "discern", "mini_discern"],
 }
 
+_CONFIG_DIR = _ROOT / "config"
+PROMPT_YAML_PATH       = _CONFIG_DIR / "entity_extraction_prompt.yaml"
+ENTITIES_YAML_PATH     = _CONFIG_DIR / "entities.yaml"
+ATTRIBUTE_PROMPT_PATH  = _CONFIG_DIR / "attribute_extraction_prompt.yaml"
+SIGNIFICANCE_YAML_PATH = _CONFIG_DIR / "significance_prompt.yaml"
+DIAG_ENTITIES_YAML_PATH = _CONFIG_DIR / "diagnosis.yaml"
+MERGED_PROMPT_YAML_PATH = _CONFIG_DIR / "merged_prompt.yaml"
 
-# ─── Config ──────────────────────────────────────────────────────────────────
+
+# ── Config ────────────────────────────────────────────────────────────────────
 
 def load_config(path: Optional[str] = None) -> dict:
     cfg_path = Path(path) if path else _ROOT / "config.yaml"
@@ -71,88 +82,98 @@ def load_config(path: Optional[str] = None) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def _merge_cli_overrides(cfg: dict, args: argparse.Namespace) -> dict:
-    """Let CLI flags override config.yaml values."""
-    if args.backend:
-        cfg.setdefault("discern", {})["default_backend"] = args.backend
-    if args.model:
-        cfg.setdefault("discern", {})["default_model"] = args.model
-    if args.max_concurrent:
-        cfg.setdefault("discern", {})["max_concurrent"] = args.max_concurrent
-
-    # Resolve metric toggles from --metrics flag
-    if args.metrics:
-        requested = set()
-        for m in args.metrics:
-            requested.update(METRIC_GROUPS.get(m, [m]))
-        cfg.setdefault("metrics", {})
-        for key in METRIC_GROUPS["all"]:
-            cfg["metrics"][key] = key in requested
-    return cfg
+def _get_credentials(cfg: dict) -> dict:
+    return cfg.get("credentials") or {}
 
 
-# ─── I/O ─────────────────────────────────────────────────────────────────────
+def _get_discern_cfg(cfg: dict) -> dict:
+    return cfg.get("discern") or {}
 
-def load_input(path: str) -> List[Dict[str, Any]]:
+
+def _get_vllm_cfg(cfg: dict) -> dict:
+    return cfg.get("vllm") or {}
+
+
+def _get_conda_envs(cfg: dict) -> dict:
+    return cfg.get("conda_envs") or {}
+
+
+# ── I/O ───────────────────────────────────────────────────────────────────────
+
+def load_input(path: str, count: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Load report pairs from a CSV or JSON file.
+
+    CSV column aliases accepted:
+      reference, ref, gt_report, ground_truth, ground_truth_raw → ground_truth_raw
+      candidate, cand, generated, hypothesis, generated_raw     → generated_raw
+    """
     p = Path(path)
     if p.suffix == ".csv":
         import pandas as pd
         df = pd.read_csv(path)
-        # Normalize column names
         col_map = {}
         for col in df.columns:
             lc = col.lower().replace(" ", "_")
-            if lc in ("ground_truth_raw", "reference", "ref", "ground_truth"):
+            if lc in ("ground_truth_raw", "reference", "ref", "gt_report", "ground_truth"):
                 col_map[col] = "ground_truth_raw"
             elif lc in ("generated_raw", "candidate", "cand", "generated", "hypothesis"):
                 col_map[col] = "generated_raw"
         df = df.rename(columns=col_map)
         if "sample_idx" not in df.columns:
-            df["sample_idx"] = list(range(len(df)))
+            df.insert(0, "sample_idx", range(len(df)))
+        if count is not None:
+            df = df.head(count)
         return df.to_dict(orient="records")
     else:
         with open(path) as f:
             data = json.load(f)
         if isinstance(data, list):
-            return data
-        return data.get("results", data.get("entries", []))
+            records = data
+        else:
+            records = data.get("results", data.get("entries", []))
+        if count is not None:
+            records = records[:count]
+        return records
 
 
-def load_existing(path: str) -> List[Dict[str, Any]]:
+def load_existing(path: str) -> Dict[Any, dict]:
+    """Load already-scored entries from an output file, keyed by sample_idx."""
     p = Path(path)
     if not p.exists():
-        return []
+        return {}
     with open(path) as f:
         data = json.load(f)
-    if isinstance(data, list):
-        return data
-    return data.get("results", [])
+    records = data.get("results", data) if isinstance(data, dict) else data
+    return {r.get("sample_idx"): r for r in records if "sample_idx" in r}
 
 
-def save_output(path: str, results: List[Dict], metadata: dict, indent: int = 2):
+def save_output(path: str, results: List[dict], metadata: dict, indent: int = 2):
     payload = {"_metadata": metadata, "results": results}
     with open(path, "w") as f:
         json.dump(payload, f, indent=indent, default=str)
 
 
-def _already_scored(entry: dict, metric_keys: List[str]) -> bool:
-    return all(k in entry and entry[k] is not None and entry[k] != "None" for k in metric_keys)
+def _has_all_keys(entry: dict, keys: List[str]) -> bool:
+    import math
+    for k in keys:
+        if k not in entry:
+            return False
+        v = entry[k]
+        if v is None or v == "None":
+            return False
+        if isinstance(v, float) and math.isnan(v):
+            return False
+    return True
 
 
-# ─── DISCERN paths (mirrors reads/src/run_discern_mini_pairs.py) ────────────
-
-_CONFIG_DIR = _ROOT / "config"
-TOKEN_PATH                = _CONFIG_DIR / ".databricks.token"
-HF_TOKEN_PATH             = _CONFIG_DIR / ".hftoken"
-PROMPT_YAML_PATH          = _CONFIG_DIR / "entity_extraction_prompt.yaml"
-ENTITIES_YAML_PATH        = _CONFIG_DIR / "entities.yaml"
-ATTRIBUTE_PROMPT_PATH     = _CONFIG_DIR / "attribute_extraction_prompt.yaml"
-SIGNIFICANCE_YAML_PATH    = _CONFIG_DIR / "significance_prompt.yaml"
-DIAG_ENTITIES_YAML_PATH   = _CONFIG_DIR / "diagnosis_only.yaml"
-MERGED_PROMPT_YAML_PATH   = _CONFIG_DIR / "merged_prompt.yaml"
+def _is_valid_report(text: str) -> bool:
+    if not text or not text.strip():
+        return False
+    ascii_ratio = sum(c.isascii() for c in text) / max(len(text), 1)
+    return ascii_ratio >= 0.8
 
 
-def _serialize_entity_evaluations(entities):
+def _serialize_entities(entities) -> List[dict]:
     out = []
     for e in entities:
         if hasattr(e, "model_dump"):
@@ -164,233 +185,414 @@ def _serialize_entity_evaluations(entities):
     return out
 
 
-def _run_discern_batch(todo, model, max_tokens, batch_size):
-    from evaluate_reports import run_evaluation_batch
-    refs  = [e.get("ground_truth_raw", "") for e in todo]
-    cands = [e.get("generated_raw", "")   for e in todo]
-    return run_evaluation_batch(
-        pairs=list(zip(refs, cands)),
-        model=model,
-        token_path=str(TOKEN_PATH),
-        prompt_yaml_path=str(PROMPT_YAML_PATH),
-        entities_yaml_path=str(ENTITIES_YAML_PATH),
-        attribute_prompt_path=str(ATTRIBUTE_PROMPT_PATH),
-        significance_yaml_path=str(SIGNIFICANCE_YAML_PATH),
-        hf_token_path=str(HF_TOKEN_PATH),
-        max_tokens=max_tokens,
-        batch_size=batch_size,
-    )
-
-
-def _run_mini_batch(todo, model, max_tokens, max_concurrent):
-    from evaluate_single_prompt import evaluate_reports_batch
-    refs  = [e.get("ground_truth_raw", "") for e in todo]
-    cands = [e.get("generated_raw", "")   for e in todo]
-    return evaluate_reports_batch(
-        reference_reports=refs,
-        candidate_reports=cands,
-        entity_list_path=str(DIAG_ENTITIES_YAML_PATH),
-        prompt_path=str(MERGED_PROMPT_YAML_PATH),
-        model=model,
-        token_path=str(TOKEN_PATH),
-        hf_token_path=str(HF_TOKEN_PATH),
-        max_tokens=max_tokens,
-        temperature=0.1,
-        max_retries=3,
-        max_concurrent=max_concurrent,
-    )
-
-
-# ─── Main ────────────────────────────────────────────────────────────────────
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def run(args: argparse.Namespace):
     cfg = load_config(args.config)
-    cfg = _merge_cli_overrides(cfg, args)
-
+    creds = _get_credentials(cfg)
+    disc_cfg = _get_discern_cfg(cfg)
+    vllm_cfg = _get_vllm_cfg(cfg)
+    conda_envs = _get_conda_envs(cfg)
+    metrics_cfg = cfg.get("metrics") or {}
     out_cfg = cfg.get("output") or {}
+
+    # CLI --metrics overrides config.yaml
+    if args.metrics:
+        requested = set()
+        for m in args.metrics:
+            requested.update(METRIC_GROUPS.get(m, [m]))
+        metrics_cfg = {k: (k in requested) for k in METRIC_GROUPS["all"]}
+
+    # Apply --skip-* flags
+    if args.skip_nlp:
+        for k in ["bleu", "rouge", "meteor", "bertscore", "radgraph"]:
+            metrics_cfg[k] = False
+    if args.skip_green:
+        metrics_cfg["green"] = False
+    if args.skip_crimson:
+        metrics_cfg["crimson"] = False
+    if args.skip_discern:
+        metrics_cfg["discern"] = False
+    if args.skip_mini_discern:
+        metrics_cfg["mini_discern"] = False
+
+    # Model and backend
+    model = args.model or disc_cfg.get("default_model", "databricks-claude-sonnet-4-6")
+    db_token = creds.get("databricks_token", "")
+    db_host = creds.get("databricks_host", "")
+    hf_token = creds.get("hf_token", "")
+    max_concurrent = disc_cfg.get("max_concurrent", 3)
+
+    # Export credentials as env vars so internal pipeline query_llm calls find them
+    if db_host:
+        os.environ["DATABRICKS_SERVING_ENDPOINTS_URL"] = db_host
+    if hf_token:
+        os.environ["HF_TOKEN"] = hf_token
+    os.environ.setdefault("VLLM_TENSOR_PARALLEL_SIZE",
+                          str(vllm_cfg.get("tensor_parallel_size", 1)))
+    os.environ.setdefault("VLLM_GPU_MEM_UTIL",
+                          str(vllm_cfg.get("gpu_memory_utilization", 0.90)))
+    os.environ.setdefault("VLLM_MAX_MODEL_LEN",
+                          str(vllm_cfg.get("max_model_len", 8192)))
+
+    # Token limits (gemma-3 has 8k context; others use 25k)
+    is_gemma3 = "gemma-3" in model.lower() or "gemma_3" in model.lower()
+    DISCERN_MAX_TOKENS = 8192 if is_gemma3 else 25000
+    MINI_MAX_TOKENS    = 8192 if is_gemma3 else 10000
+
     save_intermediate = out_cfg.get("save_intermediate", True)
     indent = out_cfg.get("indent", 2)
 
-    entries = load_input(args.input)
-    existing = load_existing(args.output) if args.output else []
-    existing_by_idx = {e.get("sample_idx"): e for e in existing}
+    entries = load_input(args.input, count=args.count)
+    existing_map = load_existing(args.output) if args.output and Path(args.output).exists() else {}
 
-    metrics_cfg = cfg.get("metrics") or {}
-    run_discern = metrics_cfg.get("discern", True)
-    run_mini = metrics_cfg.get("mini_discern", True)
-    run_crimson = metrics_cfg.get("crimson", False)
+    # Merge existing scores into fresh entries
+    results: List[dict] = []
+    for entry in entries:
+        idx = entry.get("sample_idx")
+        prev = existing_map.get(idx, {})
+        merged = {**entry, **{k: v for k, v in prev.items()
+                              if k not in entry or v is not None}}
+        results.append(merged)
 
-    disc_cfg = cfg.get("discern") or {}
-    max_concurrent = disc_cfg.get("max_concurrent", 4)
+    _run_started = datetime.now().astimezone()
+    _input_abs   = Path(args.input).resolve()
+    _output_abs  = Path(args.output).resolve() if args.output else None
+    _config_abs  = (Path(args.config).resolve() if args.config
+                    else (_ROOT / "config.yaml").resolve())
 
     metadata = {
-        "run_date": str(date.today()),
-        "input": str(args.input),
-        "backend": disc_cfg.get("default_backend", "openrouter"),
-        "model": disc_cfg.get("default_model", "google/gemma-3-27b-it"),
-        "mode": "batch" if max_concurrent > 1 else "sequential",
-        "max_concurrent": max_concurrent,
-        "metrics_enabled": [k for k, v in metrics_cfg.items() if v],
-        "tag": args.tag or "",
+        "run_date"        : str(date.today()),
+        "run_started_at"  : _run_started.isoformat(timespec="seconds"),
+        "run_ended_at"    : None,
+        "wall_seconds"    : None,
+        "input"           : str(_input_abs),
+        "input_dir"       : str(_input_abs.parent),
+        "output"          : str(_output_abs) if _output_abs else None,
+        "config_path"     : str(_config_abs) if _config_abs.exists() else None,
+        "metrics_enabled" : sorted(k for k, v in metrics_cfg.items() if v),
+        "count"           : args.count,
+        "models": {
+            "discern_llm" : model,
+            "crimson"     : (cfg.get("checkpoints") or {}).get(
+                                "crimson_model", "rajpurkarlab/medgemma-4b-it-crimson"),
+            "green"       : (cfg.get("checkpoints") or {}).get(
+                                "green_model",   "StanfordAIMI/GREEN-radllama2-7b"),
+        },
+        "discern_max_tokens": {
+            "discern"     : DISCERN_MAX_TOKENS,
+            "mini_discern": MINI_MAX_TOKENS,
+        },
+        "crimson": {
+            "batch_size": int((cfg.get("crimson") or {}).get("batch_size", 8)),
+        },
+        "vllm": {
+            "tensor_parallel_size"  : int(os.environ.get("VLLM_TENSOR_PARALLEL_SIZE", "1")),
+            "gpu_memory_utilization": float(os.environ.get("VLLM_GPU_MEM_UTIL", "0.90")),
+            "max_model_len"         : int(os.environ.get("VLLM_MAX_MODEL_LEN", "8192")),
+        },
+        "env": {
+            "hostname"           : socket.gethostname(),
+            "python_executable"  : sys.executable,
+            "python_version"     : ".".join(map(str, sys.version_info[:3])),
+            "slurm_job_id"       : os.environ.get("SLURM_JOB_ID"),
+            "slurm_array_job_id" : os.environ.get("SLURM_ARRAY_JOB_ID"),
+            "slurm_array_task_id": os.environ.get("SLURM_ARRAY_TASK_ID"),
+            "slurm_partition"    : os.environ.get("SLURM_JOB_PARTITION"),
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        },
     }
 
-    results = list(existing)
+    print(f"Loaded {len(results)} report pairs.")
+    print(f"Metrics enabled: {metadata['metrics_enabled']}")
+    print(f"Model: {model}")
 
-    # ── NLP + model-based metrics (batched) ───────────────────────────────────
-    nlp_metric_keys = [k for k in ["bleu", "rouge", "meteor", "bertscore",
-                                    "semb_score", "radgraph", "ratescore",
-                                    "green", "bluert", "fineradscor"]
-                       if metrics_cfg.get(k)]
+    # Filter invalid pairs but keep them in results with nulls
+    valid: List[dict] = []
+    for entry in results:
+        if _is_valid_report(str(entry.get("ground_truth_raw", ""))) and \
+           _is_valid_report(str(entry.get("generated_raw", ""))):
+            valid.append(entry)
+        else:
+            entry.setdefault("discern_score", None)
+            entry.setdefault("mini_discern_score", None)
 
-    if nlp_metric_keys:
-        from metrics.registry import MetricRegistry
-        registry = MetricRegistry(cfg)
+    print(f"Valid pairs: {len(valid)}/{len(results)}")
 
-        todo_entries = [e for e in entries
-                        if not _already_scored(existing_by_idx.get(e.get("sample_idx"), {}),
-                                               nlp_metric_keys)]
-        if todo_entries:
-            print(f"[metrics] Running {nlp_metric_keys} on {len(todo_entries)} entries ...")
-            candidates = [e.get("generated_raw", "") for e in todo_entries]
-            references = [e.get("ground_truth_raw", "") for e in todo_entries]
-            scores = registry.compute_all(candidates, references)
-
-            for i, entry in enumerate(todo_entries):
-                idx = entry.get("sample_idx")
-                merged = dict(existing_by_idx.get(idx, entry))
-                for metric, vals in scores.items():
-                    merged[metric] = vals[i] if vals else None
-                existing_by_idx[idx] = merged
-
-            results = list(existing_by_idx.values())
-            if save_intermediate:
-                save_output(args.output, results, metadata, indent)
-                print(f"  Saved intermediate → {args.output}")
-
-    # ── RadCliQ (needs sub-metrics already scored) ─────────────────────────────
-    if metrics_cfg.get("radcliq"):
-        from metrics.radcliq import compute_radcliq
-        for entry in results:
-            if entry.get("radcliq") is None:
-                entry["radcliq"] = compute_radcliq(
-                    [entry.get("bleu")], [entry.get("bertscore")],
-                    [entry.get("semb_score")], [entry.get("radgraph")],
-                )[0]
-        if save_intermediate:
+    # ── NLP metrics ───────────────────────────────────────────────────────────
+    nlp_keys = [k for k in ["bleu", "rouge", "meteor", "bertscore", "radgraph"]
+                if metrics_cfg.get(k)]
+    if nlp_keys:
+        from metrics.nlp import (compute_bleu1, compute_rougel, compute_meteor,
+                                  compute_bertscore_single, compute_radgraphf1_single)
+        todo = [e for e in valid if not _has_all_keys(e, nlp_keys)]
+        print(f"\n[NLP] {len(todo)} pending.")
+        for i, entry in enumerate(todo, 1):
+            ref  = entry["ground_truth_raw"]
+            cand = entry["generated_raw"]
+            if metrics_cfg.get("bleu"):
+                entry["bleu"] = compute_bleu1(cand, ref)
+            if metrics_cfg.get("rouge"):
+                entry["rouge"] = compute_rougel(cand, ref)
+            if metrics_cfg.get("meteor"):
+                entry["meteor"] = compute_meteor(cand, ref)
+            if metrics_cfg.get("bertscore"):
+                entry["bertscore"] = compute_bertscore_single(cand, ref)
+            if metrics_cfg.get("radgraph"):
+                entry["radgraph"] = compute_radgraphf1_single(cand, ref)
+            if i % 50 == 0 or i == len(todo):
+                print(f"  NLP: {i}/{len(todo)}")
+        if save_intermediate and args.output:
             save_output(args.output, results, metadata, indent)
 
-    # ── DISCERN (single batched vLLM pass, mirrors reads/run_discern_mini_pairs) ─
-    model_name = disc_cfg.get("default_model", "google/gemma-3-27b-it")
-    discern_batch_size = disc_cfg.get("batch_size", 200)
-    DISCERN_MAX_TOKENS = 8192 if "gemma_3" in model_name.lower() else 25000
-    MINI_MAX_TOKENS    = 8192 if "gemma_3" in model_name.lower() else 10000
-
-    scored_map = {e.get("sample_idx"): e for e in results}
-
-    if run_discern:
-        todo = [e for e in results if e.get("discern_score") is None]
+    # ── GREEN ─────────────────────────────────────────────────────────────────
+    if metrics_cfg.get("green"):
+        from metrics.green import compute_green
+        todo = [e for e in valid if not _has_all_keys(e, ["green"])]
+        print(f"\n[GREEN] {len(todo)} pending.")
         if todo:
-            print(f"[DISCERN] Batch-scoring {len(todo)} entries (model={model_name}) ...")
-            try:
-                batch_results = _run_discern_batch(
-                    todo, model_name, DISCERN_MAX_TOKENS, discern_batch_size,
-                )
-            except Exception as e:
-                warnings.warn(f"[DISCERN] batch failed: {e}")
-                batch_results = [None] * len(todo)
-
-            for entry, res in zip(todo, batch_results):
-                idx = entry.get("sample_idx")
-                target = scored_map.get(idx, entry)
-                if res is not None:
-                    reads_eval, discern_score = res
-                    target["discern_score"] = discern_score
-                    target["discern_evaluation"] = _serialize_entity_evaluations(reads_eval)
-                    target.pop("discern_error", None)
-                else:
-                    target["discern_score"] = None
-                    target["discern_evaluation"] = None
-                    target["discern_error"] = "Batch evaluation failed"
-                scored_map[idx] = target
-            results = list(scored_map.values())
-            if save_intermediate:
+            refs  = [e["ground_truth_raw"] for e in todo]
+            cands = [e["generated_raw"]    for e in todo]
+            green_model = (cfg.get("checkpoints") or {}).get(
+                "green_model", "StanfordAIMI/GREEN-radllama2-7b")
+            green_python = conda_envs.get("green") or None
+            scores = compute_green(cands, refs, model_name=green_model,
+                                   python_bin=green_python,
+                                   timeout=getattr(args, "timeout", None))
+            for entry, score in zip(todo, scores):
+                entry["green"] = score
+            if save_intermediate and args.output:
                 save_output(args.output, results, metadata, indent)
 
-    if run_mini:
-        todo = [e for e in results if e.get("mini_discern_score") is None]
-        if todo:
-            print(f"[mini-DISCERN] Batch-scoring {len(todo)} entries (model={model_name}) ...")
-            try:
-                batch_results = _run_mini_batch(
-                    todo, model_name, MINI_MAX_TOKENS, max_concurrent,
-                )
-            except Exception as e:
-                warnings.warn(f"[mini-DISCERN] batch failed: {e}")
-                batch_results = [None] * len(todo)
-
-            for entry, res in zip(todo, batch_results):
-                idx = entry.get("sample_idx")
-                target = scored_map.get(idx, entry)
-                if res is not None:
-                    score = int(sum(ent.clinical_significance_score for ent in res))
-                    target["mini_discern_score"] = score
-                    target["mini_discern_evaluation"] = _serialize_entity_evaluations(res)
-                    target.pop("mini_discern_error", None)
-                else:
-                    target["mini_discern_score"] = None
-                    target["mini_discern_evaluation"] = None
-                    target["mini_discern_error"] = "Validation failed after retries"
-                scored_map[idx] = target
-            results = list(scored_map.values())
-            if save_intermediate:
-                save_output(args.output, results, metadata, indent)
-
-    # ── CRIMSON (subprocess to crimson env) ────────────────────────────────────
-    if run_crimson:
+    # ── CRIMSON ───────────────────────────────────────────────────────────────
+    if metrics_cfg.get("crimson"):
         from metrics.crimson import compute_crimson
-        todo_crimson = [e for e in results if e.get("crimson") is None]
-        if todo_crimson:
-            print(f"[CRIMSON] Scoring {len(todo_crimson)} entries ...")
-            candidates = [e.get("generated_raw", "") for e in todo_crimson]
-            references = [e.get("ground_truth_raw", "") for e in todo_crimson]
-            crimson_model = (cfg.get("checkpoints") or {}).get("crimson_model",
-                             "rajpurkarlab/medgemma-4b-it-crimson")
-            scores = compute_crimson(candidates, references, model_name=crimson_model)
-            idx_map = {e.get("sample_idx"): e for e in results}
-            for entry, score in zip(todo_crimson, scores):
-                idx_map[entry.get("sample_idx")]["crimson"] = score
-            results = list(idx_map.values())
-            if save_intermediate:
+        todo = [e for e in valid if not _has_all_keys(e, ["crimson"])]
+        print(f"\n[CRIMSON] {len(todo)} pending.")
+        if todo:
+            refs  = [e["ground_truth_raw"] for e in todo]
+            cands = [e["generated_raw"]    for e in todo]
+            crimson_model = (cfg.get("checkpoints") or {}).get(
+                "crimson_model", "rajpurkarlab/medgemma-4b-it-crimson")
+            crimson_python = conda_envs.get("crimson") or None
+            crimson_batch_size = int(
+                (cfg.get("crimson") or {}).get("batch_size", 8)
+            )
+            scores = compute_crimson(cands, refs, model_name=crimson_model,
+                                     python_bin=crimson_python,
+                                     batch_size=crimson_batch_size,
+                                     timeout=getattr(args, "timeout", None))
+            for entry, score in zip(todo, scores):
+                entry["crimson"] = score
+            if save_intermediate and args.output:
                 save_output(args.output, results, metadata, indent)
+
+    # ── DISCERN (full pipeline) ───────────────────────────────────────────────
+    if metrics_cfg.get("discern"):
+        from evaluate_reports import run_evaluation, run_evaluation_batch
+        from llm_backend import TokenLimitError, InputTooLongError
+        todo = [e for e in valid if not _has_all_keys(e, ["discern_score"])]
+        print(f"\n[DISCERN] {len(todo)} pending.")
+
+        # Auto-detect batch mode: vLLM models get batch processing
+        use_batch = not model.lower().startswith("databricks-") and len(todo) > 1
+        if use_batch:
+            refs  = [e["ground_truth_raw"] for e in todo]
+            cands = [e["generated_raw"]    for e in todo]
+            batch_results = run_evaluation_batch(
+                pairs=list(zip(refs, cands)),
+                model=model,
+                token_path=db_token,
+                prompt_yaml_path=str(PROMPT_YAML_PATH),
+                entities_yaml_path=str(ENTITIES_YAML_PATH),
+                attribute_prompt_path=str(ATTRIBUTE_PROMPT_PATH),
+                significance_yaml_path=str(SIGNIFICANCE_YAML_PATH),
+                max_tokens=DISCERN_MAX_TOKENS,
+            )
+            for entry, result in zip(todo, batch_results):
+                if result is not None:
+                    discern_eval, discern_score = result
+                    entry["discern_score"] = discern_score
+                    entry["discern_evaluation"] = discern_eval
+                    entry.pop("discern_error", None)
+                else:
+                    entry["discern_score"] = None
+                    entry["discern_evaluation"] = None
+                    entry["discern_error"] = "Batch evaluation failed"
+            if save_intermediate and args.output:
+                save_output(args.output, results, metadata, indent)
+        else:
+            max_tokens = DISCERN_MAX_TOKENS
+            max_tokens_cap = DISCERN_MAX_TOKENS
+            for i, entry in enumerate(todo, 1):
+                print(f"  [{i}/{len(todo)}] sample_idx={entry.get('sample_idx')} ...",
+                      end=" ", flush=True)
+                current_max = max_tokens
+                last_exc = None
+                success = False
+                while current_max <= max_tokens_cap:
+                    try:
+                        discern_eval, discern_score = run_evaluation(
+                            report_text=entry["ground_truth_raw"],
+                            candidate_text=entry["generated_raw"],
+                            model=model,
+                            token_path=db_token,
+                            prompt_yaml_path=str(PROMPT_YAML_PATH),
+                            entities_yaml_path=str(ENTITIES_YAML_PATH),
+                            attribute_prompt_path=str(ATTRIBUTE_PROMPT_PATH),
+                            significance_yaml_path=str(SIGNIFICANCE_YAML_PATH),
+                            max_tokens=current_max,
+                        )
+                        entry["discern_score"] = discern_score
+                        entry["discern_evaluation"] = discern_eval
+                        entry.pop("discern_error", None)
+                        print(f"score={discern_score}")
+                        success = True
+                        break
+                    except (TokenLimitError, InputTooLongError) as exc:
+                        last_exc = exc
+                        new_max = min(int(current_max * 1.5), max_tokens_cap)
+                        print(f"\n    token limit, escalating {current_max}→{new_max} ...",
+                              end=" ", flush=True)
+                        current_max = new_max
+                    except Exception as exc:
+                        last_exc = exc
+                        break
+                if not success:
+                    entry["discern_score"] = None
+                    entry["discern_evaluation"] = None
+                    entry["discern_error"] = str(last_exc)
+                    print(f"FAILED: {last_exc}")
+                if save_intermediate and args.output:
+                    save_output(args.output, results, metadata, indent)
+
+    # ── mini-DISCERN ──────────────────────────────────────────────────────────
+    if metrics_cfg.get("mini_discern"):
+        from evaluate_single_prompt import evaluate_reports, evaluate_reports_batch
+        todo = [e for e in valid if not _has_all_keys(e, ["mini_discern_score"])]
+        print(f"\n[mini-DISCERN] {len(todo)} pending.")
+
+        use_batch = not model.lower().startswith("databricks-") and len(todo) > 1
+        if use_batch:
+            refs  = [e["ground_truth_raw"] for e in todo]
+            cands = [e["generated_raw"]    for e in todo]
+            batch_results = evaluate_reports_batch(
+                reference_reports=refs,
+                candidate_reports=cands,
+                entity_list_path=str(DIAG_ENTITIES_YAML_PATH),
+                prompt_path=str(MERGED_PROMPT_YAML_PATH),
+                model=model,
+                token_path=db_token,
+                max_tokens=MINI_MAX_TOKENS,
+                temperature=0.1,
+                max_retries=3,
+                max_concurrent=max_concurrent,
+            )
+            for entry, result in zip(todo, batch_results):
+                if result is not None:
+                    score = int(sum(e.clinical_significance_score for e in result))
+                    entry["mini_discern_score"] = score
+                    entry["mini_discern_evaluation"] = _serialize_entities(result)
+                    entry.pop("mini_discern_error", None)
+                else:
+                    entry["mini_discern_score"] = None
+                    entry["mini_discern_evaluation"] = None
+                    entry["mini_discern_error"] = "Validation failed"
+            if save_intermediate and args.output:
+                save_output(args.output, results, metadata, indent)
+        else:
+            for i, entry in enumerate(todo, 1):
+                print(f"  [{i}/{len(todo)}] sample_idx={entry.get('sample_idx')} ...",
+                      end=" ", flush=True)
+                try:
+                    mini = evaluate_reports(
+                        reference_report=entry["ground_truth_raw"],
+                        candidate_report=entry["generated_raw"],
+                        entity_list_path=str(DIAG_ENTITIES_YAML_PATH),
+                        prompt_path=str(MERGED_PROMPT_YAML_PATH),
+                        model=model,
+                        token_path=db_token,
+                        max_tokens=MINI_MAX_TOKENS,
+                        temperature=0.1,
+                        max_retries=4,
+                    )
+                    score = int(sum(e.clinical_significance_score for e in mini))
+                    entry["mini_discern_score"] = score
+                    entry["mini_discern_evaluation"] = _serialize_entities(mini)
+                    entry.pop("mini_discern_error", None)
+                    print(f"score={score}")
+                except Exception as exc:
+                    entry["mini_discern_score"] = None
+                    entry["mini_discern_evaluation"] = None
+                    entry["mini_discern_error"] = str(exc)
+                    print(f"FAILED: {exc}")
+                if save_intermediate and args.output:
+                    save_output(args.output, results, metadata, indent)
+
+    # ── Score summary (mean / std / n per metric) ────────────────────────────
+    import numpy as np
+    SUMMARY_KEYS = ["bleu", "rouge", "meteor", "bertscore", "radgraph",
+                    "green", "crimson", "discern_score", "mini_discern_score"]
+    score_summary: Dict[str, Dict[str, float]] = {}
+    for key in SUMMARY_KEYS:
+        vals = [r[key] for r in results
+                if r.get(key) is not None and isinstance(r[key], (int, float))]
+        if vals:
+            arr = np.array(vals, dtype=float)
+            score_summary[key] = {
+                "mean": round(float(arr.mean()), 4),
+                "std":  round(float(arr.std()),  4),
+                "n":    int(len(arr)),
+            }
+    metadata["score_summary"] = score_summary
 
     # ── Final save ────────────────────────────────────────────────────────────
-    save_output(args.output, results, metadata, indent)
-    print(f"\nDone. Results saved to {args.output}  ({len(results)} entries)")
+    _run_ended = datetime.now().astimezone()
+    metadata["run_ended_at"] = _run_ended.isoformat(timespec="seconds")
+    metadata["wall_seconds"] = round((_run_ended - _run_started).total_seconds(), 2)
+    if args.output:
+        save_output(args.output, results, metadata, indent)
+        print(f"\nSaved: {args.output}")
 
+    # ── Human-readable summary ───────────────────────────────────────────────
+    print("\nScore summary:")
+    for key, s in score_summary.items():
+        print(f"  {key:>20s}: mean={s['mean']:.4f}  std={s['std']:.4f}  n={s['n']}")
+
+    return results
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run all DISCERN metrics on a JSON or CSV input file.",
+        description="Evaluate radiology report pairs with DISCERN, NLP, and other metrics.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
     )
-    parser.add_argument("--input", required=True, help="Input JSON or CSV file")
-    parser.add_argument("--output", required=True, help="Output JSON file")
-    parser.add_argument(
-        "--metrics", nargs="+", default=None,
-        help=(
-            "Metrics to run. Can be group names (all, nlp, radiology, model, discern) "
-            "or individual metric names (bleu, rouge, bertscore, radgraph, radcliq, "
-            "ratescore, green, crimson, bluert, fineradscor, discern, mini_discern). "
-            "Defaults to all enabled metrics in config.yaml."
-        ),
-    )
-    parser.add_argument("--config", default=None, help="Path to config.yaml (default: ./config.yaml)")
-    parser.add_argument("--backend", default=None,
-                        help="LLM backend override (anthropic|openai|openrouter|databricks|hf)")
-    parser.add_argument("--model", default=None, help="LLM model name override")
-    parser.add_argument("--max-concurrent", type=int, default=None,
-                        help="Max parallel DISCERN requests (default from config.yaml)")
-    parser.add_argument("--tag", default=None, help="Optional run tag for metadata")
+    parser.add_argument("--input", required=True,
+                        help="Input CSV or JSON file of report pairs.")
+    parser.add_argument("--output", required=True,
+                        help="Output JSON path (resume-safe).")
+    parser.add_argument("--config", default=None,
+                        help="Path to config.yaml (default: config.yaml at repo root).")
+    parser.add_argument("--model", default=None,
+                        help="Override model from config.yaml.")
+    parser.add_argument("--count", type=int, default=None,
+                        help="Process only the first N pairs (useful for testing).")
+    parser.add_argument("--metrics", nargs="+",
+                        choices=list(METRIC_GROUPS.keys()) + list(METRIC_GROUPS["all"]),
+                        help="Metrics to run (overrides config.yaml). "
+                             "Groups: nlp, model, discern, all.")
+    parser.add_argument("--skip-nlp", action="store_true")
+    parser.add_argument("--skip-green", action="store_true")
+    parser.add_argument("--skip-crimson", action="store_true")
+    parser.add_argument("--skip-discern", action="store_true")
+    parser.add_argument("--skip-mini-discern", action="store_true")
+    parser.add_argument("--timeout", type=int, default=None,
+                        help="Per-subprocess timeout in seconds (passed to "
+                             "GREEN/CRIMSON). Typically derived from remaining "
+                             "SLURM walltime by the job wrapper.")
     args = parser.parse_args()
     run(args)
 

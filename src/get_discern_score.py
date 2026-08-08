@@ -89,8 +89,31 @@ def compute_counts(findings):
     return counts
 
 
+DIAGNOSIS_PENALTY = {
+    "partial":    2,
+    "discordant": 5,
+}
+
+ATTRIBUTE_PENALTY = {
+    "discordant":      2,
+    "partial":         1,
+    "candidate-misses":1,
+    "candidate-adds":  1,
+}
+
+
 def compute_entity_penalty(f: dict) -> float:
-    return float(f.get("significance_score", 0))
+    raw_penalty = 1.0
+    # diagnosis_concordance = f.get("diagnosis_concordance")
+    # raw_penalty += DIAGNOSIS_PENALTY.get(diagnosis_concordance, 0)
+    # location_concordance = f.get("location_concordance")
+    # raw_penalty += ATTRIBUTE_PENALTY.get(location_concordance, 0)
+    # severity_concordance = f.get("severity_concordance")
+    # raw_penalty += ATTRIBUTE_PENALTY.get(severity_concordance, 0)
+    # temporal_comparison = f.get("temporal_comparison")
+    # raw_penalty += ATTRIBUTE_PENALTY.get(temporal_comparison, 0)
+    significance = float(f.get("significance_score", 0))
+    return significance * raw_penalty
 
 
 def compute_reads_score(findings: list) -> float:
@@ -157,7 +180,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "directory",
         nargs="?",
-        default=None,
+        default="data/rexval",
         help="Directory containing rexval_reads_evaluation_*.csv files",
     )
     parser.add_argument(
@@ -166,8 +189,5 @@ if __name__ == "__main__":
         help="Name of the column containing findings (default: reads_eval)",
     )
     args = parser.parse_args()
-
-    if args.directory is None:
-        parser.error("directory is required")
 
     process_directory(args.directory, args.findings_column)

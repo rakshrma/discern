@@ -1,57 +1,8 @@
 from __future__ import annotations
 
-import json
-import re
 from typing import Any, Dict, List, Literal, Optional
 
-Presence = Literal["POSITIVE", "NEGATIVE"]
-
-# ---------------------------------------------------------------------------
-# Shared JSON helpers (single canonical copy used by all pipeline modules)
-# ---------------------------------------------------------------------------
-
-_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
-
-
-def sanitize_json_text(s: str) -> str:
-    s = s.replace("“", '"').replace("”", '"').replace("’", "'")
-    return _TRAILING_COMMA_RE.sub(r"\1", s).strip()
-
-
-def extract_first_json_value(text: str) -> Optional[str]:
-    """Return the first complete JSON object or array from *text* using a
-    bracket-balanced walk.  Handles both ``{`` and ``[`` openers and correctly
-    ignores brackets inside string literals."""
-    obj_start = text.find("{")
-    arr_start = text.find("[")
-
-    if obj_start == -1 and arr_start == -1:
-        return None
-
-    start = obj_start if (obj_start != -1 and (arr_start == -1 or obj_start < arr_start)) else arr_start
-    open_ch  = text[start]
-    close_ch = "}" if open_ch == "{" else "]"
-
-    depth, in_str, escape = 0, False, False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_str:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == open_ch:
-            depth += 1
-        elif ch == close_ch:
-            depth -= 1
-            if depth == 0:
-                return text[start: i + 1]
-    return None
+Presence = Literal["POSITIVE", "NEGATIVE", "UNCERTAIN"]
 
 
 def _norm_entity(s: str) -> str:

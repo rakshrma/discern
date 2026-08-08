@@ -1,38 +1,18 @@
-"""
-Standalone subprocess runner for GREEN scoring.
-Called by green.py via `conda run -p <green_score env> python _green_runner.py`.
-
-Input JSON: [{"candidate": ..., "reference": ...}, ...]
-Output JSON: [score_or_null, ...]
-"""
-
-import argparse
+"""Subprocess entry point for GREEN scoring (run inside the green conda env)."""
 import json
-
-from green_score import GREEN
-
+import sys
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--model", default="StanfordAIMI/GREEN-radllama2-7b")
-    parser.add_argument("--output-dir", default=".")
-    args = parser.parse_args()
+    _, input_path, output_path = sys.argv
+    with open(input_path) as f:
+        payload = json.load(f)
 
-    with open(args.input) as f:
-        pairs = json.load(f)
+    from green_score import GREEN
+    scorer = GREEN(payload["model_name"], output_dir=payload["output_dir"])
+    _, _, score_list, _, _ = scorer(payload["references"], payload["candidates"])
 
-    candidates = [p["candidate"] for p in pairs]
-    references = [p["reference"] for p in pairs]
-
-    scorer = GREEN(args.model, output_dir=args.output_dir)
-    mean, std, score_list, summary, result_df = scorer(references, candidates)
-    scores = [float(s) if s is not None else None for s in score_list]
-
-    with open(args.output, "w") as f:
-        json.dump(scores, f)
-
+    with open(output_path, "w") as f:
+        json.dump([float(s) for s in score_list], f)
 
 if __name__ == "__main__":
     main()
