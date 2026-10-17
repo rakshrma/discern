@@ -69,6 +69,7 @@ metrics:
   # LLM-based (uses discern.default_model and credentials above)
   discern: true
   mini_discern: true
+  free_discern: false           # opt-in: no entity list, model lists only the errors (see README)
 
 # ── Checkpoints ───────────────────────────────────────────────────────────────
 # Required only for RadGraph, GREEN, and CRIMSON.
