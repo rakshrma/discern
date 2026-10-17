@@ -31,6 +31,8 @@ any discrepancies.
 
 - **Full DISCERN**: 3-stage pipeline (entity extraction → attribute comparison → significance scoring)
 - **mini-DISCERN**: Single-prompt evaluation for faster batch processing
+- **free-DISCERN**: Single-prompt evaluation with no entity list — the model lists only the errors it finds and the score is the sum of their significance (see [free-DISCERN](#free-discern))
+- **Swappable entity list**: Full DISCERN reads its entity list from `config/entities.yaml` (or any list passed with `--entities-yaml`)
 - **NLP metrics**: BLEU-1, ROUGE-L, METEOR, BERTScore, RadGraph F1
 - **Model-based metrics**: GREEN, CRIMSON (separate conda envs)
 - **Flexible input**: CSV or JSON with arbitrary report pairs
@@ -116,6 +118,77 @@ To evaluate against radiologist-annotated benchmarks:
 python scripts/run_discern.py --dataset both
 ```
 
+`--model` selects the judge: names starting with `databricks-` (e.g. `databricks-claude-sonnet-4-6`)
+are called through the Databricks API (credentials in `config.yaml`); any other name is treated as a
+Hugging Face model id (e.g. `google/gemma-4-E4B-it`) and run locally with vLLM on a GPU node. Without
+`--model`, `discern.default_model` from `config.yaml` is used.
+
+Full DISCERN uses `config/entities.yaml`; pass another list with
+`--entities-yaml`, e.g. `--entities-yaml config/entities_original.yaml` (the earlier 121-entity list).
+
+## free-DISCERN
+
+free-DISCERN drops the entity list. A single prompt gives the model the reference and candidate
+reports and asks it to identify the findings, judge their concordance (diagnosis, location, severity,
+temporal) and return **only the discrepancies**, each scored 1–4 for clinical significance with the same
+rubric as mini-DISCERN. The score is the sum of those significances, computed in code (0 = no errors).
+The prompt is `config/freeform_prompt.yaml`.
+
+It is opt-in (`--free-discern`) and currently available in `scripts/run_discern.py` (ReXVal / RaDEvalX).
+
+```bash
+# free-DISCERN only, via the Databricks API
+python scripts/run_discern.py --dataset both --model databricks-claude-sonnet-4-6 \
+    --skip-discern --skip-mini-discern --skip-nlp --skip-green \
+    --free-discern --run-tag free_v0
+
+# free-DISCERN only, local model via vLLM (on a GPU node)
+VLLM_MAX_MODEL_LEN=25000 VLLM_TENSOR_PARALLEL_SIZE=1 \
+python scripts/run_discern.py --dataset both --model google/gemma-4-E4B-it \
+    --skip-discern --skip-mini-discern --skip-nlp --skip-green \
+    --free-discern --run-tag free_v0
+```
+
+Drop the `--skip-*` flags to score free-DISCERN alongside the other metrics. Set `VLLM_MAX_MODEL_LEN`
+explicitly for local models (the `config.yaml` default of 8192 can truncate long prompts); if vLLM's
+automatic attention backend fails to build (seen with MedGemma), set `VLLM_ATTN_BACKEND=TRITON_ATTN`.
+
+Each result entry gains:
+
+```json
+{
+  "free_discern_score": 6,
+  "free_discern_evaluation": [
+    {
+      "finding": "Airspace opacity in the posterior left lower lobe",
+      "reference_presence": "POSITIVE",
+      "candidate_presence": "NEGATIVE",
+      "reference_text": "...",
+      "candidate_text": "...",
+      "diagnosis_concordance": "discordant",
+      "location_concordance": "candidate-misses",
+      "severity_concordance": "candidate-misses",
+      "temporal_concordance": "not mentioned",
+      "clinical_significance_score": 4,
+      "rationale": "..."
+    }
+  ]
+}
+```
+
+Pairs whose output cannot be validated after retries get `free_discern_score: null` and a
+`free_discern_error`.
+
+To run the original-list, updated-list and free-DISCERN arms for one model on a GPU node:
+
+```bash
+MODEL=google/gemma-4-E4B-it ARMS="original updated free" OUT_TAG=gemma4_e4b VLLM_TP=1 \
+    sbatch -p dgx-b200 --gpus-per-node=1 -c 28 -t 06:00:00 jobs/entities_ablation.sh
+```
+
+Results go to `data/discern_runs/entities_ablation_<OUT_TAG>/<arm>/`. Compare the arms against the
+radiologist annotations with `scripts/compare_arms.py --model <model_stem> --ablation-dir <dir>`.
+
 ## Robustness Evaluation
 
 ```bash
@@ -140,6 +213,7 @@ See `jobs/` for ready-to-submit SLURM launchers:
 | `jobs/run_custom.sh` | Run on your own dataset |
 | `jobs/discern_api.sh` | Multi-model sweep via Databricks API |
 | `jobs/discern_vllm.sh` | Multi-model sweep via vLLM on GPU nodes |
+| `jobs/entities_ablation.sh` | Original vs updated entity list vs free-DISCERN for one model (ReXVal + RaDEvalX, 3 repeats) |
 | `jobs/paraphrase_generate.sh` | Generate paraphrase robustness dataset |
 | `jobs/paraphrase_eval.sh` | Evaluate DISCERN on paraphrased pairs |
 
