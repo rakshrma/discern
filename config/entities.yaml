@@ -1,188 +1,71 @@
-Quality of Exams:
+Exam Quality:
   - Suboptimal Penetration
   - Suboptimal Inspiration
-  - Body Rotation
-  - Incomplete Anatomical Coverage
-  - Other (Artifacts and External Foreign Bodies)
+  - Rotation
+  - Incomplete Coverage
 
-Tubes and Lines:
-  - Endotracheal Tubes
-  - Central Venous Catheters
-  - Chest Tubes
-  - Feeding Tubes
-  - Tracheostomy Tubes
-  - Other Tubes and Lines
+Tubes/Lines/Devices:
+  - Endotracheal Tube
+  - Central Venous Catheter
+  - Chest Tube
+  - Feeding Tube
+  - Tracheostomy Tube
+  - Cardiac Device (pacemaker/ICD/valve)
+  - Other Tube/Line
+  - Foreign Body (ingested/inhaled/penetrating)
 
-Implanted Medical Devices:
-  - Cardiovascular Devices
-  - Neurological Devices
-  - Musculoskeletal Devices
-  - Gastrointestinal Devices
-  - Other Implanted Devices
-
-Non-Therapeutic Internal Foreign Bodies:
-  - Ingested or Inhaled Objects
-  - Penetrating Objects
-
-Lung and Pleural Opacity:
-  - Pulmonary Nodule/Mass
-  - Pulmonary Calcification
-  - Collapse/Atelectasis
-  - Hilar Opacity
-  - Airspace Opacity
-  - Interstitial Opacity
-  - Pleural Effusion
-  - Other Opacity
-
-Lung and Pleural Lucency:
-  - Air-filled Lucency
-  - Bronchiectasis
-  - Emphysema
-  - Pneumothorax
-  - Other Lucency
-
-Lung Volume:
-  - Pulmonary Hyperinflation
-  - Decreased Pulmonary Volume
-
-Pleural Thickening:
-  - Pleural Plaque
-  - Pleural Mass
-  - Other Pleural Lesion
-
-Pulmonary Fissure:
-  - Fissural Deviation
-  - Fissural Variation
-  - Other Fissural Abnormality
-
-Pulmonary Vessel:
-  - Pulmonary Artery Enlargement
-  - Other Pulmonary Vascular Abnormality
+Hilum:
+  - Hilar Lymphadenopathy
 
 Airway:
+  - Tracheal Deviation
   - Airway Narrowing/Obstruction
-  - Airway Deviation
-  - Airway Wall Abnormality
-  - Other Airway Abnormality
 
-Diaphragm:
-  - Elevation
-  - Flattening
-  - Diaphragmatic hernia
-  - Eventration
-  - Other Diaphgragmatic Abnormality
-
-Heart:
-  - Enlarged Cardiac Contour
-  - Pneumopericardium
-  - Other Heart Abnormality
-
-Aorta:
-  - Aortic Dilatation
-  - Aortic Calcification
-  - Tortuos/Unfolded Aorta
-  - Other Aortic Abnormality
-
-Other Vessel:
-  - Other Vessel Abnomality
-
-Mediastinum:
-  - Mediastinal Widening
-  - Mediastinal Deviation
-  - Mediastinal Mass/Lymphadenopathy
-  - Pneumomediastinum
-  - Other Mediastinal Abnormality
-
-Neck/Chest Wall Soft Tissue:
-  - Subcutaneous Emphysema
-  - Other Soft Tissue Abnormality
-
-Abdomen:
-  - Air Under Diaphragm
-  - Other Abdominal Abnormality
-
-Rib:
-  - Rib Fracture
-  - Rib Deformity
-  - Other Rib Abnormality
-
-Clavicle:
-  - Clavicle Fracture
-  - Clavicle Deformity
-  - Other Clavicle Abnormality
-
-Scapula:
-  - Scapula Fracture
-  - Scapula Deformity
-  - Other Scapula Abnormality
-
-Humerus:
-  - Humerus Fracture
-  - Humerus Deformity
-  - Other Humerus Abnormality
-
-Sternum:
-  - Sternum Fracture
-  - Sternum Deformity
-  - Other Sternum Abnormality
-
-Spine:
-  - Spine Fracture
-  - Spine Deformity
-  - Other Spine Abnormality
-
-Joint:
-  - Joint Dislocation
-  - Degenerative Change
-
-Generalized Bone Abnormality:
-  - Decreased Bone Density
-  - Other Generalized Bone Abnormality
-
-Congenital Disease:
-  - Congenital Lung Disease
-  - Congenital Vascular Disease
-  - Other Heart Disease
-
-Infectious Pulmonary Disease:
-  - Pneumonia
-  - Tuberculosis
-  - Other Infection
-
-Pulmonary Neoplasm:
-  - Primary Lung Malignancy
-  - Pulmonary Metastases
-  - Other Pulmonary Neoplasm
-
-Lymphoproliferative Disease:
-  - Lymphoproliferative Disease
-
-Other Pulmonary Diagnosis:
-  - Interstitial Lung Disease
-  - Sarcoidosis
-  - Asbestos-Related Disease
-  - Pneumoconiosis
+Pulmonary:
+  - Pulmonary Nodule/Mass
+  - Airspace Opacity
+  - Interstitial/Reticular Opacity
+  - Atelectasis/Collapse
+  - Pulmonary Calcification
+  - Lucency/Cavity/Bulla
+  - Bronchiectasis
+  - Emphysema
+  - Hyperinflation
+  - Volume Loss
+  - Pneumonia/Infection
   - Pulmonary Edema
-  - ARDS
-  - Aspiration
-  - Iatrogenic Lung Disease
-  - COPD
-  - Vasculitis
-  - Pulmonary Hypertension
-  - Pulmonary Thromboembolic Disease
+  - Fissural Deviation
   - Miscellaneous Pulmonary Disease
 
-Cardiac Disease:
-  - Valvular Heart Disease
-  - Myocardial Disease
-  - Pericardial Disease
-  - Congestive Heart Failure
-  - Other Cardiac Disease
+Pleura:
+  - Pleural Effusion
+  - Pneumothorax
+  - Pleural Thickening/Plaque
+  - Pleural Mass
 
-Aortic Disease:
-  - Aortic Dissection/Aneurysm
-  - Other Aortic Disease
+Cardiovascular:
+  - Cardiomegaly
+  - Aortic Dilatation/Aneurysm
+  - Aortic Calcification
+  - Tortuous/Unfolded Aorta
+  - Pulmonary Artery Enlargement
+  - Pericardial Effusion
+  - Other Cardiac Abnormality
 
-Miscellaneous Diagnosis:
-  - Trauma
-  - Post-Treatment Change
+Musculoskeletal:
+  - Rib Fracture
+  - Other Fracture
+  - Degenerative Change
+  - Decreased Bone Density
+  - Bone Lesion/Deformity
+
+Diaphragm/Abdomen:
+  - Diaphragm Elevation
+  - Free Air Under Diaphragm
+  - Diaphragmatic Hernia/Eventration
+
+Mediastinum/Soft Tissue:
+  - Mediastinal Widening/Mass
+  - Mediastinal Deviation
+  - Pneumomediastinum
+  - Subcutaneous Emphysema

@@ -3,6 +3,10 @@ Radiology report concordance evaluator.
 
 Compares a candidate report against a reference (ground truth) report
 at the entity level using an LLM, with Pydantic-validated output.
+
+With an entity list (mini-DISCERN) the LLM evaluates each listed entity;
+without one (free-DISCERN, entity_list_path=None) it identifies findings
+itself and returns only the errors.
 """
 
 from __future__ import annotations
@@ -12,10 +16,10 @@ import re
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Type
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, ValidationError
 
 from llm_backend import (query_llm, query_llm_batch,
                       TokenLimitError, TOKEN_LIMIT_PREFIX)  # adjust import path as needed
@@ -67,9 +71,29 @@ class EntityEvaluation(BaseModel):
         return v
 
 
-class EvaluationResult(BaseModel):
-    """Wrapper so we can validate the full LLM response as a list."""
-    entities: List[EntityEvaluation]
+class ErrorEvaluation(BaseModel):
+    """One error found by free-DISCERN (no entity list). Concordant findings
+    are not errors, so the score is normally 1-4; a stray 0 adds nothing."""
+    finding: str = Field(min_length=1)
+    reference_presence: PresenceStatus
+    candidate_presence: PresenceStatus
+    reference_text: Optional[str] = None
+    candidate_text: Optional[str] = None
+    diagnosis_concordance: DiagnosisConcordance
+    location_concordance: DimensionConcordance
+    severity_concordance: DimensionConcordance
+    temporal_concordance: DimensionConcordance
+    clinical_significance_score: int = Field(ge=0, le=4)
+    rationale: str
+
+
+def _item_model(entity_list: Optional[List[str]]) -> Type[BaseModel]:
+    return EntityEvaluation if entity_list is not None else ErrorEvaluation
+
+
+def _validate_items(parsed: list, item_model: Type[BaseModel]) -> List[BaseModel]:
+    """Validate the full LLM response (a JSON array) against the item schema."""
+    return TypeAdapter(List[item_model]).validate_python(parsed)
 
 
 # ──────────────────────────────────────────────
@@ -132,20 +156,25 @@ def _build_messages(
     prompt_config: dict,
     reference_report: str,
     candidate_report: str,
-    entity_list: List[str],
+    entity_list: Optional[List[str]],
 ) -> List[Dict[str, str]]:
     """Construct the chat messages from the prompt template + inputs."""
     system_prompt = prompt_config["system_prompt"]
     user_template = prompt_config["user_prompt_template"]
 
-    entity_list_json = json.dumps(entity_list, indent=2)
+    has_slot = "{entity_list_json}" in user_template
+    if has_slot != (entity_list is not None):
+        raise ValueError("Prompt template and entity list disagree: the template "
+                         + ("expects an entity list but none was given."
+                            if has_slot else "has no {entity_list_json} slot."))
 
     user_content = (
         user_template
         .replace("{reference_report}", reference_report)
         .replace("{candidate_report}", candidate_report)
-        .replace("{entity_list_json}", entity_list_json)
     )
+    if entity_list is not None:
+        user_content = user_content.replace("{entity_list_json}", json.dumps(entity_list, indent=2))
 
     return [
         {"role": "system", "content": system_prompt},
@@ -163,18 +192,24 @@ def _build_retry_message(errors: str, raw_response: str) -> str:
     )
 
 
+def _load_entity_list(entity_list_path: Optional[str | Path]) -> Optional[List[str]]:
+    if entity_list_path is None:
+        return None
+    return _flatten_entity_list(_load_yaml(entity_list_path))
+
+
 def _validate_single_response(
     raw_response: str,
     idx: int = 0,
-) -> Optional[List[EntityEvaluation]]:
+    item_model: Type[BaseModel] = EntityEvaluation,
+) -> Optional[List[BaseModel]]:
     """Try to parse and validate a single LLM response. Returns None on failure."""
     try:
         json_str = _extract_json(raw_response)
         parsed = json.loads(json_str)
         if not isinstance(parsed, list):
             return None
-        result = EvaluationResult(entities=parsed)
-        return result.entities
+        return _validate_items(parsed, item_model)
     except (json.JSONDecodeError, ValueError, ValidationError) as e:
         logger.warning("Item %d failed validation: %s", idx, e)
         return None
@@ -187,7 +222,7 @@ def _validate_single_response(
 def evaluate_reports(
     reference_report: str,
     candidate_report: str,
-    entity_list_path: str | Path,
+    entity_list_path: Optional[str | Path],
     prompt_path: str | Path,
     model: Optional[str] = None,
     token_path: Optional[str] = None,
@@ -195,7 +230,7 @@ def evaluate_reports(
     max_tokens: int = 4096,
     temperature: float = 0.1,
     max_retries: int = 2,
-) -> List[EntityEvaluation]:
+) -> List[BaseModel]:
     """
     Evaluate entity-level concordance between a reference and candidate
     radiology report.
@@ -206,8 +241,9 @@ def evaluate_reports(
         The ground truth radiology report text.
     candidate_report : str
         The candidate radiology report text to evaluate.
-    entity_list_path : str or Path
-        Path to a YAML file mapping categories to entity lists.
+    entity_list_path : str, Path or None
+        Path to a YAML file mapping categories to entity lists, or None for
+        the entity-free prompt (output validated as ErrorEvaluation).
     prompt_path : str or Path
         Path to the prompt YAML file with ``system_prompt`` and
         ``user_prompt_template`` keys.
@@ -226,8 +262,8 @@ def evaluate_reports(
 
     Returns
     -------
-    list[EntityEvaluation]
-        Validated list of entity evaluations.
+    list[EntityEvaluation] or list[ErrorEvaluation]
+        Validated evaluations (ErrorEvaluation when no entity list is given).
 
     Raises
     ------
@@ -236,8 +272,8 @@ def evaluate_reports(
     """
     # Load inputs
     prompt_config = _load_yaml(prompt_path)
-    entity_config = _load_yaml(entity_list_path)
-    entity_list: List[str] = _flatten_entity_list(entity_config)
+    entity_list = _load_entity_list(entity_list_path)
+    item_model = _item_model(entity_list)
 
     # Build initial messages
     messages = _build_messages(
@@ -290,13 +326,13 @@ def evaluate_reports(
                 )
 
             # Validate each entity through Pydantic
-            result = EvaluationResult(entities=parsed)
+            items = _validate_items(parsed, item_model)
 
             logger.info(
                 "Validation passed on attempt %d/%d — %d entities returned.",
-                attempt + 1, 1 + max_retries, len(result.entities),
+                attempt + 1, 1 + max_retries, len(items),
             )
-            return result.entities
+            return items
 
         except (json.JSONDecodeError, ValueError, ValidationError) as e:
             last_error = e
@@ -327,7 +363,7 @@ def evaluate_reports(
 def evaluate_reports_batch(
     reference_reports: List[str],
     candidate_reports: List[str],
-    entity_list_path: str | Path,
+    entity_list_path: Optional[str | Path],
     prompt_path: str | Path,
     model: Optional[str] = None,
     token_path: Optional[str] = None,
@@ -336,7 +372,7 @@ def evaluate_reports_batch(
     temperature: float = 0.1,
     max_retries: int = 2,
     max_concurrent: int = 3,
-) -> List[Optional[List[EntityEvaluation]]]:
+) -> List[Optional[List[BaseModel]]]:
     """
     Batch-evaluate entity-level concordance for multiple report pairs.
 
@@ -350,8 +386,9 @@ def evaluate_reports_batch(
         Ground truth report texts.
     candidate_reports : list of str
         Candidate report texts to evaluate.
-    entity_list_path : str or Path
-        Path to YAML entity list (nested category format).
+    entity_list_path : str, Path or None
+        Path to YAML entity list (nested category format), or None for the
+        entity-free prompt.
     prompt_path : str or Path
         Path to the prompt YAML file.
     model : str, optional
@@ -371,7 +408,7 @@ def evaluate_reports_batch(
 
     Returns
     -------
-    list of (list[EntityEvaluation] or None)
+    list of (list[EntityEvaluation | ErrorEvaluation] or None)
         One result per input pair. None if validation failed after all retries.
     """
     assert len(reference_reports) == len(candidate_reports), (
@@ -385,8 +422,8 @@ def evaluate_reports_batch(
 
     # Load configs once
     prompt_config = _load_yaml(prompt_path)
-    entity_config = _load_yaml(entity_list_path)
-    entity_list: List[str] = _flatten_entity_list(entity_config)
+    entity_list = _load_entity_list(entity_list_path)
+    item_model = _item_model(entity_list)
 
     # Build all message lists
     all_messages = [
@@ -413,11 +450,11 @@ def evaluate_reports_batch(
     raw_responses = query_llm_batch(**batch_kwargs)
 
     # ── Validate each response ──
-    results: List[Optional[List[EntityEvaluation]]] = [None] * n
+    results: List[Optional[List[BaseModel]]] = [None] * n
     failed_indices: List[int] = []
 
     for i, raw in enumerate(raw_responses):
-        validated = _validate_single_response(raw, i)
+        validated = _validate_single_response(raw, i, item_model)
         if validated is not None:
             results[i] = validated
         else:
@@ -475,7 +512,7 @@ def evaluate_reports_batch(
                     last_raw = TOKEN_LIMIT_PREFIX  # will trigger escalation next loop
                     continue
 
-                validated = _validate_single_response(last_raw, i)
+                validated = _validate_single_response(last_raw, i, item_model)
                 if validated is not None:
                     results[i] = validated
                     success = True
