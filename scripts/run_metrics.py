@@ -31,6 +31,15 @@ Examples
   python scripts/run_metrics.py \\
       --input pairs.csv --output scored.json \\
       --model databricks-claude-sonnet-4-6 --metrics nlp discern
+
+  # free-DISCERN only (no entity list; opt-in)
+  python scripts/run_metrics.py \\
+      --input pairs.csv --output scored.json --metrics free_discern
+
+  # Full DISCERN with a different entity list
+  python scripts/run_metrics.py \\
+      --input pairs.csv --output scored.json --metrics discern \\
+      --entities-yaml config/entities_original.yaml
 """
 from __future__ import annotations
 
@@ -56,6 +65,7 @@ METRIC_GROUPS = {
     "all":      ["bleu", "rouge", "meteor", "bertscore", "radgraph",
                  "green", "crimson", "discern", "mini_discern"],
 }
+OPT_IN_METRICS = ["free_discern"]   # never part of a group; request by name or --free-discern
 
 _CONFIG_DIR = _ROOT / "config"
 PROMPT_YAML_PATH       = _CONFIG_DIR / "entity_extraction_prompt.yaml"
@@ -64,6 +74,7 @@ ATTRIBUTE_PROMPT_PATH  = _CONFIG_DIR / "attribute_extraction_prompt.yaml"
 SIGNIFICANCE_YAML_PATH = _CONFIG_DIR / "significance_prompt.yaml"
 DIAG_ENTITIES_YAML_PATH = _CONFIG_DIR / "diagnosis.yaml"
 MERGED_PROMPT_YAML_PATH = _CONFIG_DIR / "merged_prompt.yaml"
+FREE_PROMPT_YAML_PATH   = _CONFIG_DIR / "freeform_prompt.yaml"
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -201,7 +212,9 @@ def run(args: argparse.Namespace):
         requested = set()
         for m in args.metrics:
             requested.update(METRIC_GROUPS.get(m, [m]))
-        metrics_cfg = {k: (k in requested) for k in METRIC_GROUPS["all"]}
+        metrics_cfg = {k: (k in requested) for k in METRIC_GROUPS["all"] + OPT_IN_METRICS}
+    if args.free_discern:
+        metrics_cfg["free_discern"] = True
 
     # Apply --skip-* flags
     if args.skip_nlp:
@@ -282,7 +295,9 @@ def run(args: argparse.Namespace):
         "discern_max_tokens": {
             "discern"     : DISCERN_MAX_TOKENS,
             "mini_discern": MINI_MAX_TOKENS,
+            "free_discern": MINI_MAX_TOKENS,
         },
+        "entities_yaml"   : str(Path(args.entities_yaml).resolve()),
         "crimson": {
             "batch_size": int((cfg.get("crimson") or {}).get("batch_size", 8)),
         },
@@ -316,6 +331,8 @@ def run(args: argparse.Namespace):
         else:
             entry.setdefault("discern_score", None)
             entry.setdefault("mini_discern_score", None)
+            if metrics_cfg.get("free_discern"):
+                entry.setdefault("free_discern_score", None)
 
     print(f"Valid pairs: {len(valid)}/{len(results)}")
 
@@ -404,7 +421,7 @@ def run(args: argparse.Namespace):
                 model=model,
                 token_path=db_token,
                 prompt_yaml_path=str(PROMPT_YAML_PATH),
-                entities_yaml_path=str(ENTITIES_YAML_PATH),
+                entities_yaml_path=str(args.entities_yaml),
                 attribute_prompt_path=str(ATTRIBUTE_PROMPT_PATH),
                 significance_yaml_path=str(SIGNIFICANCE_YAML_PATH),
                 max_tokens=DISCERN_MAX_TOKENS,
@@ -438,7 +455,7 @@ def run(args: argparse.Namespace):
                             model=model,
                             token_path=db_token,
                             prompt_yaml_path=str(PROMPT_YAML_PATH),
-                            entities_yaml_path=str(ENTITIES_YAML_PATH),
+                            entities_yaml_path=str(args.entities_yaml),
                             attribute_prompt_path=str(ATTRIBUTE_PROMPT_PATH),
                             significance_yaml_path=str(SIGNIFICANCE_YAML_PATH),
                             max_tokens=current_max,
@@ -466,11 +483,15 @@ def run(args: argparse.Namespace):
                 if save_intermediate and args.output:
                     save_output(args.output, results, metadata, indent)
 
-    # ── mini-DISCERN ──────────────────────────────────────────────────────────
-    if metrics_cfg.get("mini_discern"):
+    # ── Single-prompt variants ────────────────────────────────────────────────
+    # mini-DISCERN scores the diagnosis list; free-DISCERN has no list and the
+    # model returns only the errors it finds. Score = sum of significances.
+    def run_single_prompt(label, prefix, entity_list_path, prompt_path):
         from evaluate_single_prompt import evaluate_reports, evaluate_reports_batch
-        todo = [e for e in valid if not _has_all_keys(e, ["mini_discern_score"])]
-        print(f"\n[mini-DISCERN] {len(todo)} pending.")
+        score_key, eval_key, err_key = f"{prefix}_score", f"{prefix}_evaluation", f"{prefix}_error"
+        entity_arg = str(entity_list_path) if entity_list_path else None
+        todo = [e for e in valid if not _has_all_keys(e, [score_key])]
+        print(f"\n[{label}] {len(todo)} pending.")
 
         use_batch = not model.lower().startswith("databricks-") and len(todo) > 1
         if use_batch:
@@ -479,8 +500,8 @@ def run(args: argparse.Namespace):
             batch_results = evaluate_reports_batch(
                 reference_reports=refs,
                 candidate_reports=cands,
-                entity_list_path=str(DIAG_ENTITIES_YAML_PATH),
-                prompt_path=str(MERGED_PROMPT_YAML_PATH),
+                entity_list_path=entity_arg,
+                prompt_path=str(prompt_path),
                 model=model,
                 token_path=db_token,
                 max_tokens=MINI_MAX_TOKENS,
@@ -491,13 +512,13 @@ def run(args: argparse.Namespace):
             for entry, result in zip(todo, batch_results):
                 if result is not None:
                     score = int(sum(e.clinical_significance_score for e in result))
-                    entry["mini_discern_score"] = score
-                    entry["mini_discern_evaluation"] = _serialize_entities(result)
-                    entry.pop("mini_discern_error", None)
+                    entry[score_key] = score
+                    entry[eval_key] = _serialize_entities(result)
+                    entry.pop(err_key, None)
                 else:
-                    entry["mini_discern_score"] = None
-                    entry["mini_discern_evaluation"] = None
-                    entry["mini_discern_error"] = "Validation failed"
+                    entry[score_key] = None
+                    entry[eval_key] = None
+                    entry[err_key] = "Validation failed"
             if save_intermediate and args.output:
                 save_output(args.output, results, metadata, indent)
         else:
@@ -505,34 +526,40 @@ def run(args: argparse.Namespace):
                 print(f"  [{i}/{len(todo)}] sample_idx={entry.get('sample_idx')} ...",
                       end=" ", flush=True)
                 try:
-                    mini = evaluate_reports(
+                    items = evaluate_reports(
                         reference_report=entry["ground_truth_raw"],
                         candidate_report=entry["generated_raw"],
-                        entity_list_path=str(DIAG_ENTITIES_YAML_PATH),
-                        prompt_path=str(MERGED_PROMPT_YAML_PATH),
+                        entity_list_path=entity_arg,
+                        prompt_path=str(prompt_path),
                         model=model,
                         token_path=db_token,
                         max_tokens=MINI_MAX_TOKENS,
                         temperature=0.1,
                         max_retries=4,
                     )
-                    score = int(sum(e.clinical_significance_score for e in mini))
-                    entry["mini_discern_score"] = score
-                    entry["mini_discern_evaluation"] = _serialize_entities(mini)
-                    entry.pop("mini_discern_error", None)
+                    score = int(sum(e.clinical_significance_score for e in items))
+                    entry[score_key] = score
+                    entry[eval_key] = _serialize_entities(items)
+                    entry.pop(err_key, None)
                     print(f"score={score}")
                 except Exception as exc:
-                    entry["mini_discern_score"] = None
-                    entry["mini_discern_evaluation"] = None
-                    entry["mini_discern_error"] = str(exc)
+                    entry[score_key] = None
+                    entry[eval_key] = None
+                    entry[err_key] = str(exc)
                     print(f"FAILED: {exc}")
                 if save_intermediate and args.output:
                     save_output(args.output, results, metadata, indent)
 
+    if metrics_cfg.get("mini_discern"):
+        run_single_prompt("mini-DISCERN", "mini_discern", DIAG_ENTITIES_YAML_PATH, MERGED_PROMPT_YAML_PATH)
+    if metrics_cfg.get("free_discern"):
+        run_single_prompt("free-DISCERN", "free_discern", None, FREE_PROMPT_YAML_PATH)
+
     # ── Score summary (mean / std / n per metric) ────────────────────────────
     import numpy as np
     SUMMARY_KEYS = ["bleu", "rouge", "meteor", "bertscore", "radgraph",
-                    "green", "crimson", "discern_score", "mini_discern_score"]
+                    "green", "crimson", "discern_score", "mini_discern_score",
+                    "free_discern_score"]
     score_summary: Dict[str, Dict[str, float]] = {}
     for key in SUMMARY_KEYS:
         vals = [r[key] for r in results
@@ -581,9 +608,15 @@ def main():
     parser.add_argument("--count", type=int, default=None,
                         help="Process only the first N pairs (useful for testing).")
     parser.add_argument("--metrics", nargs="+",
-                        choices=list(METRIC_GROUPS.keys()) + list(METRIC_GROUPS["all"]),
+                        choices=list(METRIC_GROUPS.keys()) + list(METRIC_GROUPS["all"]) + OPT_IN_METRICS,
                         help="Metrics to run (overrides config.yaml). "
-                             "Groups: nlp, model, discern, all.")
+                             "Groups: nlp, model, discern, all. free_discern is opt-in "
+                             "(not in any group).")
+    parser.add_argument("--free-discern", action="store_true",
+                        help="Also run free-DISCERN (single prompt, no entity list; "
+                             "score = sum of error significances).")
+    parser.add_argument("--entities-yaml", type=Path, default=ENTITIES_YAML_PATH,
+                        help="Entity list for full DISCERN (default: config/entities.yaml).")
     parser.add_argument("--skip-nlp", action="store_true")
     parser.add_argument("--skip-green", action="store_true")
     parser.add_argument("--skip-crimson", action="store_true")

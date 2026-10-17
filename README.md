@@ -81,7 +81,25 @@ python scripts/run_metrics.py --input pairs.csv --output scored.json --metrics n
 # Specific model
 python scripts/run_metrics.py --input pairs.csv --output scored.json \
     --model databricks-claude-sonnet-4-6
+
+# free-DISCERN only (opt-in; see below)
+python scripts/run_metrics.py --input pairs.csv --output scored.json \
+    --metrics free_discern --model databricks-claude-sonnet-4-6
+
+# Full DISCERN + mini-DISCERN, plus free-DISCERN
+python scripts/run_metrics.py --input pairs.csv --output scored.json \
+    --metrics discern --free-discern
+
+# Full DISCERN with a different entity list
+python scripts/run_metrics.py --input pairs.csv --output scored.json \
+    --metrics discern --entities-yaml config/entities_original.yaml
 ```
+
+`--model` selects the judge: names starting with `databricks-` are called through the Databricks API
+(credentials in `config.yaml`); any other name is treated as a Hugging Face model id (e.g.
+`google/gemma-4-E4B-it`) and run locally with vLLM, so run those on a GPU node. Local models are scored
+in one vLLM batch; Databricks models are scored pair by pair. Re-running with the same `--output`
+skips pairs that already have a score, so an interrupted run can be resumed.
 
 ## Output Format
 
@@ -118,10 +136,7 @@ To evaluate against radiologist-annotated benchmarks:
 python scripts/run_discern.py --dataset both
 ```
 
-`--model` selects the judge: names starting with `databricks-` (e.g. `databricks-claude-sonnet-4-6`)
-are called through the Databricks API (credentials in `config.yaml`); any other name is treated as a
-Hugging Face model id (e.g. `google/gemma-4-E4B-it`) and run locally with vLLM on a GPU node. Without
-`--model`, `discern.default_model` from `config.yaml` is used.
+`--model` works as for `run_metrics.py`; without it, `discern.default_model` from `config.yaml` is used.
 
 Full DISCERN uses `config/entities.yaml`; pass another list with
 `--entities-yaml`, e.g. `--entities-yaml config/entities_original.yaml` (the earlier 121-entity list).
@@ -134,7 +149,18 @@ temporal) and return **only the discrepancies**, each scored 1–4 for clinical 
 rubric as mini-DISCERN. The score is the sum of those significances, computed in code (0 = no errors).
 The prompt is `config/freeform_prompt.yaml`.
 
-It is opt-in (`--free-discern`) and currently available in `scripts/run_discern.py` (ReXVal / RaDEvalX).
+It is opt-in and never part of a metric group (`--metrics discern` / `all` do not include it):
+request it with `--metrics free_discern`, add it with `--free-discern`, or set
+`metrics.free_discern: true` in `config.yaml`.
+
+On your own report pairs:
+
+```bash
+python scripts/run_metrics.py --input pairs.csv --output scored.json \
+    --metrics free_discern --model databricks-claude-sonnet-4-6
+```
+
+On ReXVal / RaDEvalX:
 
 ```bash
 # free-DISCERN only, via the Databricks API
