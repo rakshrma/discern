@@ -139,6 +139,13 @@ def _load_vllm_model(model: str, hf_token: Optional[str] = None):
     if hf_token:
         os.environ["HF_TOKEN"] = hf_token
 
+    # Optional attention-backend override (e.g. TRITON_ATTN), for models whose
+    # auto-selected backend needs JIT kernels that fail to build on this cluster.
+    extra = {}
+    if os.getenv("VLLM_ATTN_BACKEND"):
+        extra["attention_backend"] = os.environ["VLLM_ATTN_BACKEND"]
+        print(f"[vLLM] attention_backend override: {extra['attention_backend']}")
+
     llm = LLM(
         model=model,
         dtype="bfloat16",
@@ -151,6 +158,7 @@ def _load_vllm_model(model: str, hf_token: Optional[str] = None):
         # asserts at runtime ("Flashinfer allreduce workspace must be
         # initialized when using flashinfer"). Costs some throughput; safe.
         enforce_eager=True,
+        **extra,
     )
     print(f"[vLLM] Model '{model}' loaded successfully.")
     return llm

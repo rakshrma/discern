@@ -1,0 +1,188 @@
+Quality of Exams:
+  - Suboptimal Penetration
+  - Suboptimal Inspiration
+  - Body Rotation
+  - Incomplete Anatomical Coverage
+  - Other (Artifacts and External Foreign Bodies)
+
+Tubes and Lines:
+  - Endotracheal Tubes
+  - Central Venous Catheters
+  - Chest Tubes
+  - Feeding Tubes
+  - Tracheostomy Tubes
+  - Other Tubes and Lines
+
+Implanted Medical Devices:
+  - Cardiovascular Devices
+  - Neurological Devices
+  - Musculoskeletal Devices
+  - Gastrointestinal Devices
+  - Other Implanted Devices
+
+Non-Therapeutic Internal Foreign Bodies:
+  - Ingested or Inhaled Objects
+  - Penetrating Objects
+
+Lung and Pleural Opacity:
+  - Pulmonary Nodule/Mass
+  - Pulmonary Calcification
+  - Collapse/Atelectasis
+  - Hilar Opacity
+  - Airspace Opacity
+  - Interstitial Opacity
+  - Pleural Effusion
+  - Other Opacity
+
+Lung and Pleural Lucency:
+  - Air-filled Lucency
+  - Bronchiectasis
+  - Emphysema
+  - Pneumothorax
+  - Other Lucency
+
+Lung Volume:
+  - Pulmonary Hyperinflation
+  - Decreased Pulmonary Volume
+
+Pleural Thickening:
+  - Pleural Plaque
+  - Pleural Mass
+  - Other Pleural Lesion
+
+Pulmonary Fissure:
+  - Fissural Deviation
+  - Fissural Variation
+  - Other Fissural Abnormality
+
+Pulmonary Vessel:
+  - Pulmonary Artery Enlargement
+  - Other Pulmonary Vascular Abnormality
+
+Airway:
+  - Airway Narrowing/Obstruction
+  - Airway Deviation
+  - Airway Wall Abnormality
+  - Other Airway Abnormality
+
+Diaphragm:
+  - Elevation
+  - Flattening
+  - Diaphragmatic hernia
+  - Eventration
+  - Other Diaphgragmatic Abnormality
+
+Heart:
+  - Enlarged Cardiac Contour
+  - Pneumopericardium
+  - Other Heart Abnormality
+
+Aorta:
+  - Aortic Dilatation
+  - Aortic Calcification
+  - Tortuos/Unfolded Aorta
+  - Other Aortic Abnormality
+
+Other Vessel:
+  - Other Vessel Abnomality
+
+Mediastinum:
+  - Mediastinal Widening
+  - Mediastinal Deviation
+  - Mediastinal Mass/Lymphadenopathy
+  - Pneumomediastinum
+  - Other Mediastinal Abnormality
+
+Neck/Chest Wall Soft Tissue:
+  - Subcutaneous Emphysema
+  - Other Soft Tissue Abnormality
+
+Abdomen:
+  - Air Under Diaphragm
+  - Other Abdominal Abnormality
+
+Rib:
+  - Rib Fracture
+  - Rib Deformity
+  - Other Rib Abnormality
+
+Clavicle:
+  - Clavicle Fracture
+  - Clavicle Deformity
+  - Other Clavicle Abnormality
+
+Scapula:
+  - Scapula Fracture
+  - Scapula Deformity
+  - Other Scapula Abnormality
+
+Humerus:
+  - Humerus Fracture
+  - Humerus Deformity
+  - Other Humerus Abnormality
+
+Sternum:
+  - Sternum Fracture
+  - Sternum Deformity
+  - Other Sternum Abnormality
+
+Spine:
+  - Spine Fracture
+  - Spine Deformity
+  - Other Spine Abnormality
+
+Joint:
+  - Joint Dislocation
+  - Degenerative Change
+
+Generalized Bone Abnormality:
+  - Decreased Bone Density
+  - Other Generalized Bone Abnormality
+
+Congenital Disease:
+  - Congenital Lung Disease
+  - Congenital Vascular Disease
+  - Other Heart Disease
+
+Infectious Pulmonary Disease:
+  - Pneumonia
+  - Tuberculosis
+  - Other Infection
+
+Pulmonary Neoplasm:
+  - Primary Lung Malignancy
+  - Pulmonary Metastases
+  - Other Pulmonary Neoplasm
+
+Lymphoproliferative Disease:
+  - Lymphoproliferative Disease
+
+Other Pulmonary Diagnosis:
+  - Interstitial Lung Disease
+  - Sarcoidosis
+  - Asbestos-Related Disease
+  - Pneumoconiosis
+  - Pulmonary Edema
+  - ARDS
+  - Aspiration
+  - Iatrogenic Lung Disease
+  - COPD
+  - Vasculitis
+  - Pulmonary Hypertension
+  - Pulmonary Thromboembolic Disease
+  - Miscellaneous Pulmonary Disease
+
+Cardiac Disease:
+  - Valvular Heart Disease
+  - Myocardial Disease
+  - Pericardial Disease
+  - Congestive Heart Failure
+  - Other Cardiac Disease
+
+Aortic Disease:
+  - Aortic Dissection/Aneurysm
+  - Other Aortic Disease
+
+Miscellaneous Diagnosis:
+  - Trauma
+  - Post-Treatment Change
